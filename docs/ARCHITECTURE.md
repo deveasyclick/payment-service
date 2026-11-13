@@ -47,6 +47,8 @@ The application will be separated into small layers:
 payment-service/
 ├── src/
 │   ├── app.ts
+│   ├── server-lifecycle.ts
+│   ├── server-lifecycle.types.ts
 │   ├── server.ts
 │   ├── config/
 │   │   ├── config.const.ts
@@ -121,6 +123,7 @@ payment-service/
 │   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
+│   │   ├── server-lifecycle.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
@@ -366,6 +369,14 @@ The worker's completion update includes the version it claimed. If an operator c
 
 **Why:** processing after the HTTP response proves genuine asynchronous behavior. Bounded retries address temporary failure without an infinite loop. Lease recovery acknowledges that a process can die between claim and completion. An injected gateway and clock keep tests fast and deterministic.
 
+### Worker process boundary
+
+The API and worker deliberately run in the same Node.js process. `server.ts` starts both and injects the same repository instance, so all HTTP and worker mutations pass through one write queue and read the latest published snapshot. No separate worker command is provided.
+
+The JSON repository loads its document into memory at initialization. A separate worker process would have its own cached document and mutation queue. It would not observe payments created by the API after initialization, and writes from either process could replace the other's newer document. For example, an API write adding payment B could be lost when the worker saves payment A using an older snapshot that does not contain B. Atomic rename protects file integrity, but provides no cross-process locking or transaction isolation. Likewise, `version` comparisons against separate cached snapshots cannot prevent these lost updates.
+
+**Why:** sharing one process provides the consistency required here with minimal setup. Separate worker deployment would first require shared transactional storage, such as SQLite or PostgreSQL, with atomic claims and database-enforced version checks. An independent worker entry point can then reuse the existing worker and gateway boundaries. File watching or periodic reloads alone would not make concurrent read-modify-write operations safe. Multiple API or worker processes must never share the current JSON file.
+
 ### Delivery semantics
 
 Processing is **at least once**, not exactly once. A crash can occur after the simulated provider accepts a request but before local success is saved. The worker therefore passes the payment ID as the provider idempotency key on every attempt. The simulator will model idempotent provider behavior.
@@ -415,7 +426,7 @@ Expected client validation failures use an appropriate lower log level to avoid 
 
 ## 12. Configuration and lifecycle
 
-Configuration is parsed once with Zod at startup. Expected settings include port, data-file path, API key/auth mode, rate-limit windows and maxima, trusted-proxy count, worker interval, attempt timeout, lease duration, maximum attempts, simulated latency, log level, and environment.
+Configuration is parsed once with Zod at startup. Expected settings include port, data-file path, API key/auth mode, rate-limit windows and maxima, trusted-proxy count, worker interval, attempt timeout, lease duration, maximum attempts, shutdown timeout, simulated latency, log level, and environment.
 
 Startup order:
 
