@@ -2,7 +2,6 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** implementation and delivery polish are complete. Local verification passes 143 tests; the full socket-based API suite, clean dependency installation, and registry audit still require an unrestricted local/CI run. See [verification results](./docs/VERIFICATION.md).
 
 ## Table of contents
 
@@ -486,6 +485,8 @@ Errors use one consistent envelope:
 ```
 
 Expected errors have stable machine-readable codes. Unexpected failures return a generic `500 Internal Server Error`; logs retain error type and stack call sites with correlation. Raw provider messages are omitted and internal details are never returned to clients.
+
+Unsupported JSON body encodings or charsets return `415 Unsupported Media Type` with code `UNSUPPORTED_MEDIA_TYPE` and a fixed message that omits the supplied header values.
 
 Every error includes `error.path`: the original request pathname with mounted prefixes, excluding query strings. Validation `details[].path` identifies the invalid field instead. Unknown routes return `404 ROUTE_NOT_FOUND`; `/health` and `/health/live` both return `200 {"status":"ok"}` and do not check readiness. Use `/health/ready` for readiness.
 

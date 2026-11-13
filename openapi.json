@@ -139,6 +139,9 @@
           "413": {
             "$ref": "#/components/responses/PayloadTooLarge"
           },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           },
@@ -205,6 +208,9 @@
           },
           "413": {
             "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -290,6 +296,9 @@
           },
           "413": {
             "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -724,7 +733,8 @@
                   "RATE_LIMIT_EXCEEDED",
                   "PAYLOAD_TOO_LARGE",
                   "SERVICE_NOT_READY",
-                  "INTERNAL_ERROR"
+                  "INTERNAL_ERROR",
+                  "UNSUPPORTED_MEDIA_TYPE"
                 ]
               },
               "message": {
@@ -1082,6 +1092,29 @@
                 "message": "Service is not ready",
                 "requestId": "request-123",
                 "path": "/health/ready"
+              }
+            }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "Unsupported JSON request body encoding or charset.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "UNSUPPORTED_MEDIA_TYPE",
+                "message": "Request body encoding or charset is unsupported",
+                "requestId": "request-123",
+                "path": "/payments"
               }
             }
           }

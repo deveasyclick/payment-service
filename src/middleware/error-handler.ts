@@ -97,6 +97,17 @@ export function createErrorHandler(logger: ServiceLogger): ErrorRequestHandler {
       return;
     }
 
+    if (errorStatus(error) === 415) {
+      sendError(
+        request,
+        response,
+        415,
+        'UNSUPPORTED_MEDIA_TYPE',
+        'Request body encoding or charset is unsupported',
+      );
+      return;
+    }
+
     if (errorStatus(error) === 400 && error instanceof SyntaxError) {
       sendError(
         request,

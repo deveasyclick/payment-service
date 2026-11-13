@@ -266,6 +266,59 @@ describe('payment API', () => {
     });
   });
 
+  it.each([
+    ['Content-Encoding', 'unsupported-secret'],
+    ['Content-Type', 'application/json; charset=iso-8859-1'],
+  ])(
+    'rejects unsupported %s with a safe 415 response',
+    async (header, value) => {
+      const logs = captureLogs();
+      const createPayment = vi.fn();
+      const app = await createTestApp({
+        logger: logs.logger,
+        paymentService: {
+          createPayment,
+          getPayment: vi.fn(),
+          updatePaymentStatus: vi.fn(),
+        },
+      });
+      const response = await request(app)
+        .post('/payments')
+        .set('X-API-Key', apiKey)
+        .set('Idempotency-Key', 'unsupported-body-key')
+        .set('Content-Type', 'application/json')
+        .set(header, value)
+        .send('{"amount":2500,"currency":"NGN"}');
+
+      expect(response.status).toBe(415);
+      expect(response.body as unknown).toEqual({
+        error: {
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+          message: 'Request body encoding or charset is unsupported',
+          path: '/payments',
+          requestId: response.headers['x-request-id'],
+        },
+      });
+      expect(response.headers['x-request-id']).toBeTypeOf('string');
+      expect(createPayment).not.toHaveBeenCalled();
+      expect(logs.entries()).toContainEqual(
+        expect.objectContaining({
+          event: 'http_request_rejected',
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+          level: 40,
+        }),
+      );
+      expect(
+        logs
+          .entries()
+          .some(
+            (entry) => typeof entry.level === 'number' && entry.level >= 50,
+          ),
+      ).toBe(false);
+      expect(logs.text()).not.toContain('unsupported-secret');
+    },
+  );
+
   it('requires the configured API key while leaving health checks public', async () => {
     const app = await createTestApp();
     const missing = await request(app).get(`/payments/${missingPaymentId}`);
