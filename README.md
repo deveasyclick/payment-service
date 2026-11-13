@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** implementation milestones 1–9 are complete, including the API contract and operating guide. Final delivery verification and polish remain in Task 10.
+> **Project status:** implementation and delivery polish are complete. Local verification passes 143 tests; the full socket-based API suite, clean dependency installation, and registry audit still require an unrestricted local/CI run. See [verification results](./docs/VERIFICATION.md).
 
 ## What this project demonstrates
 
@@ -86,10 +86,10 @@ Environment variables are read once at startup. `pnpm dev` and `pnpm start` do n
 
 ```bash
 cp .env.example .env
-node --env-file=.env --watch --import tsx src/server.ts
+node --env-file=.env --watch --import tsx src/main.ts
 ```
 
-For compiled code use `node --env-file=.env dist/server.js` after building. Exported environment variables also work with all commands. Stop the current service before switching scenarios; never run multiple processes against the same JSON file. `Ctrl+C` triggers graceful shutdown. The relative data path is resolved from the working directory; reuse it to resume persisted work across restarts.
+For compiled code use `node --env-file=.env dist/main.js` after building. Exported environment variables also work with all commands. Stop the current service before switching scenarios; never run multiple processes against the same JSON file. `Ctrl+C` triggers graceful shutdown. The relative data path is resolved from the working directory; reuse it to resume persisted work across restarts.
 
 ## Configuration
 
@@ -195,9 +195,9 @@ Documentation routes are public and use the general rate limit. If `API_KEY` is 
 payment-service/
 ├── src/
 │   ├── app.ts
-│   ├── server-lifecycle.ts
-│   ├── server-lifecycle.types.ts
+│   ├── main.ts
 │   ├── server.ts
+│   ├── server.types.ts
 │   ├── config/
 │   │   ├── config.const.ts
 │   │   ├── config.schema.ts
@@ -276,13 +276,16 @@ payment-service/
 │   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
-│   │   ├── server-lifecycle.test.ts
+│   │   ├── server.test.ts
 │   │   ├── request-logging.test.ts
 │   │   ├── openapi-contract.test.ts
 │   │   ├── documentation-routes.test.ts
 │   │   ├── health-and-errors.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
+│   │   ├── atomic-file-writer.test.ts
+│   │   ├── payment-lifecycle.test.ts
+│   │   ├── startup-logging.test.ts
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
@@ -298,11 +301,17 @@ payment-service/
 ├── vitest.config.ts
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   └── TASKS.md
+│   ├── TASKS.md
+│   └── VERIFICATION.md
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 └── README.md
 ```
 
-`app.ts` constructs the Express application without listening on a port, which allows Supertest to exercise it directly. `server.ts` is the composition root and owns startup, listening, worker lifecycle, and graceful shutdown.
+`app.ts` constructs the Express application without listening on a port, which allows Supertest to exercise it directly. `main.ts` is the executable composition root: it loads configuration, builds the shared dependencies, starts `PaymentServer`, and registers its signal handlers.
+
+The `PaymentServer` class in `server.ts` owns readiness, ordered startup, worker lifecycle, signal handling, and bounded HTTP shutdown. Its injected dependency types live in `server.types.ts`. Importing the class does not start the service or initialize storage; `main.ts` performs startup. `pnpm dev` runs `src/main.ts`, and `pnpm start` runs `dist/main.js` after a build.
 
 Payment-specific behavior and its repository implementations stay in `modules/payments`. File-database mechanics, storage schemas, and atomic writing stay under `infrastructure/storage`, mirroring the separation between database infrastructure and feature repositories in a database-backed service. Other cross-module adapters, such as the simulated provider and Pino configuration, also stay under `infrastructure`. Cross-cutting Express functions live under `middleware`.
 
@@ -472,13 +481,13 @@ The in-process worker:
 
 Processing has **at-least-once** semantics. If the process stops after the provider accepts a payment but before local success is saved, the attempt can run again. The payment ID is therefore reused as the downstream idempotency key.
 
-On startup, pending work remains eligible and expired `processing` leases are requeued. A late worker result cannot overwrite a newer operator update because completion is conditional on the version and state originally claimed.
+On startup and before each worker claim, expired `processing` leases are recovered. Work with attempts remaining is requeued; exhausted work fails with `attempts_exhausted`. A lease still active during a quick restart is picked up after it expires, without another restart. A completion write failure leaves the durable claim available for the same recovery path. Interrupted claims count toward the attempt limit. A late worker result cannot overwrite a newer operator update because completion is conditional on the version originally claimed.
 
 The worker starts automatically with the API through `pnpm dev` or `pnpm start` (after `pnpm build`). Both share one repository instance and one mutation queue. Running the worker in a separate process against the same JSON file is unsupported: each process would hold its own cached snapshot and write queue, so the worker would not see newly created payments and either process could overwrite the other's changes. Atomic file replacement prevents partial files; it does not coordinate concurrent processes, and payment version checks apply only to each process's local snapshot.
 
 This keeps setup small for the assessment. A separate worker process would require shared transactional storage with atomic job claims and version checks, such as SQLite or PostgreSQL, before adding an independent worker entry point. Do not run multiple service instances against the same JSON file.
 
-The service reports ready only after storage validation, lease recovery, worker startup, and HTTP listening succeed. `SIGTERM` and `SIGINT` immediately make it unready, stop new HTTP connections and worker claims, then allow active work a configurable bounded shutdown period before aborting it.
+The service reports ready only after storage validation, lease recovery, worker startup, and HTTP listening succeed. `SIGTERM` and `SIGINT` immediately make it unready, stop new HTTP connections and worker claims, then allow active work a configurable bounded shutdown period before aborting it. Work interrupted at the deadline stays `processing` for lease recovery; shutdown does not schedule another retry. The gateway must honor cancellation to release its own resources; the simulator does so. Native filesystem operations already in flight cannot be cancelled by the worker deadline.
 
 ## Persistence
 
@@ -542,6 +551,8 @@ Successful requests and persisted worker outcomes use `info`; expected client fa
 
 The app factory accepts an injected logger and defaults to silent logging for tests. Captured-log tests verify correlation, HTTP levels and durations, secret redaction, retry/completion events, and stale-result handling without changing global logger state.
 
+Errors are logged where they are handled: HTTP rejections include their error code and path, unexpected HTTP failures and worker failures use the injected logger, and startup failures (including invalid configuration) are logged before exit. Rethrown infrastructure failures reach those boundaries. Secondary file-close and temporary-file cleanup failures are logged separately while preserving the original write error; combined startup/cleanup failures retain both errors as a safely serialized aggregate. ESLint rejects empty catch blocks, including comment-only blocks, and no-op promise rejection handlers.
+
 ## Testing approach
 
 Vitest and Supertest cover the highest-risk behaviors:
@@ -560,6 +571,10 @@ Vitest and Supertest cover the highest-risk behaviors:
 - Log redaction
 
 The gateway, clock, timers, and ID generator are injectable where necessary so tests do not depend on randomness or real-time sleeps. Run `pnpm test` locally for the complete suite, including Supertest tests that bind an ephemeral local port. Environments that prohibit socket binding can run `pnpm exec vitest run --exclude tests/integration/payments-api.test.ts`; that excludes API verification and is not a substitute for a full local run.
+
+The additional `payment-lifecycle.test.ts` integration suite exercises real Express requests, JSON persistence, and worker processing over in-memory HTTP streams. It covers asynchronous responses, concurrent idempotency, operator races, malformed/oversized bodies, disk failures, and restart recovery without requiring a listening port. Failure tests also verify temporary-file cleanup, bounded shutdown, startup ordering, and idempotency keys that match object-prototype names.
+
+The GitHub Actions workflow installs the pinned dependencies, runs formatting, linting, type-checking, the full test suite, build, and `pnpm audit --audit-level=high`. Registry failures or high-severity advisories fail verification; audit checks are not silently skipped. The workflow is included but has not been executed from this workspace. See [VERIFICATION.md](./docs/VERIFICATION.md) for observed results and remaining release checks.
 
 ## Known limitations
 
@@ -582,3 +597,4 @@ A production evolution would replace JSON persistence with a transactional datab
 
 - [Architecture](./docs/ARCHITECTURE.md) — detailed decisions, rationale, contracts, failure behavior, and tradeoffs.
 - [Implementation tasks](./docs/TASKS.md) — sequential milestones, acceptance criteria, and suggested commits.
+- [Verification results](./docs/VERIFICATION.md) — completed checks, regression coverage, and checks awaiting an unrestricted environment.

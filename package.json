@@ -11,9 +11,9 @@
   },
   "packageManager": "pnpm@11.15.0",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch src/main.ts",
     "build": "tsc --project tsconfig.build.json",
-    "start": "node dist/server.js",
+    "start": "node dist/main.js",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format": "prettier --write .",
