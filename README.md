@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** architecture, delivery planning, the TypeScript tooling scaffold, configuration validation, and payment-domain rules are complete. Persistence, processing, and HTTP runtime behavior have not been implemented yet.
+> **Project status:** architecture, delivery planning, tooling, configuration validation, payment-domain rules, and atomic JSON persistence are complete. Background processing and HTTP runtime behavior have not been implemented yet.
 
 ## What this project demonstrates
 
@@ -77,14 +77,22 @@ payment-service/
 │   │       ├── payment.state-machine.ts
 │   │       ├── payment.mapper.ts
 │   │       ├── payment.service.ts
-│   │       ├── payment.repository.ts
+│   │       ├── payment-repository.errors.ts
+│   │       ├── payment-repository.types.ts
+│   │       ├── repositories/
+│   │       │   ├── in-memory-payment.repository.ts
+│   │       │   └── json-payment.repository.ts
 │   │       ├── payment.gateway.ts
 │   │       ├── payment.worker.ts
 │   │       └── payment.routes.ts
 │   ├── infrastructure/
-│   │   ├── persistence/
-│   │   │   ├── json-payment.repository.ts
-│   │   │   └── storage.schemas.ts
+│   │   ├── storage/
+│   │   │   ├── atomic-file-writer.ts
+│   │   │   ├── payment-storage-state.ts
+│   │   │   ├── storage.const.ts
+│   │   │   ├── storage.errors.ts
+│   │   │   ├── storage.schemas.ts
+│   │   │   └── storage.types.ts
 │   │   ├── gateway/
 │   │   │   └── simulated-payment.gateway.ts
 │   │   └── logging/
@@ -101,23 +109,30 @@ payment-service/
 │       │   └── configuration.errors.ts
 │       ├── helpers/
 │       │   ├── clock.ts
-│       │   └── id-generator.ts
+│       │   ├── id-generator.ts
+│       │   └── mutation-queue.ts
 │       └── types/
 │           ├── clock.types.ts
 │           ├── config.types.ts
 │           └── id-generator.types.ts
 ├── tests/
 │   ├── unit/
-│   │   └── modules/
-│   │       └── payments/
-│   │           ├── payment-state-machine.test.ts
-│   │           └── payment-service.test.ts
+│   │   ├── modules/
+│   │   │   └── payments/
+│   │   │       ├── in-memory-payment-repository.test.ts
+│   │   │       ├── payment-mapper.test.ts
+│   │   │       ├── payment-state-machine.test.ts
+│   │   │       └── payment-service.test.ts
+│   │   ├── shared/
+│   │   │   └── helpers.test.ts
+│   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
 │   │   ├── payment-worker.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
 │       ├── create-test-app.ts
+│       ├── payment-fixtures.ts
 │       ├── scripted-payment-gateway.ts
 │       └── test-clock.ts
 ├── openapi.yaml
@@ -126,14 +141,15 @@ payment-service/
 ├── package.json
 ├── tsconfig.json
 ├── vitest.config.ts
-├── ARCHITECTURE.md
-├── TASKS.md
+├── docs/
+│   ├── ARCHITECTURE.md
+│   └── TASKS.md
 └── README.md
 ```
 
 `app.ts` constructs the Express application without listening on a port, which allows Supertest to exercise it directly. `server.ts` is the composition root and owns startup, listening, worker lifecycle, and graceful shutdown.
 
-Payment-specific behavior stays in `modules/payments`. Concrete technical adapters—JSON persistence, the simulated provider, and Pino configuration—stay under `infrastructure`. Cross-cutting Express functions live under `middleware`. Shared files are grouped by purpose; shared types belong under `shared/types`, while payment-only types remain in the payment module. `shared.types.ts` should only be created if a genuinely cross-module type is needed.
+Payment-specific behavior and its repository implementations stay in `modules/payments`. File-database mechanics, storage schemas, and atomic writing stay under `infrastructure/storage`, mirroring the separation between database infrastructure and feature repositories in a database-backed service. Other cross-module adapters, such as the simulated provider and Pino configuration, also stay under `infrastructure`. Cross-cutting Express functions live under `middleware`.
 
 The runtime JSON directory is intentionally absent from the committed tree. The service creates the parent directory of the configured data-file path, such as `./data/payments.json`, and `.gitignore` excludes the generated data.
 
@@ -391,5 +407,5 @@ A production evolution would replace JSON persistence with a transactional datab
 
 ## Project documents
 
-- [Architecture](./ARCHITECTURE.md) — detailed decisions, rationale, contracts, failure behavior, and tradeoffs.
-- [Implementation tasks](./TASKS.md) — sequential milestones, acceptance criteria, and suggested commits.
+- [Architecture](./docs/ARCHITECTURE.md) — detailed decisions, rationale, contracts, failure behavior, and tradeoffs.
+- [Implementation tasks](./docs/TASKS.md) — sequential milestones, acceptance criteria, and suggested commits.
