@@ -12,6 +12,7 @@ import {
   buildPayment,
 } from '../../../helpers/payment-fixtures.js';
 import { ScriptedPaymentGateway } from '../../../helpers/scripted-payment-gateway.js';
+import { captureLogs } from '../../../helpers/capture-logs.js';
 
 const defaultWorkerOptions = {
   attemptTimeoutMs: 1_000,
@@ -34,6 +35,7 @@ describe('PaymentWorker', () => {
   });
 
   it('claims and completes a successful payment', async () => {
+    const logs = captureLogs();
     const repository = await createSeededRepository();
     const gateway = new ScriptedPaymentGateway([{ kind: 'succeeded' }]);
     const clock: Clock = {
@@ -45,6 +47,8 @@ describe('PaymentWorker', () => {
       clock,
       defaultWorkerOptions,
       () => 0,
+      undefined,
+      logs.logger,
     );
 
     await expect(worker.processNextPayment()).resolves.toBe(true);
@@ -56,9 +60,26 @@ describe('PaymentWorker', () => {
       version: 3,
     });
     expect(gateway.contexts[0]?.idempotencyKey).toBe(buildPayment().id);
+    expect(logs.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'payment_attempt_started',
+          paymentId: buildPayment().id,
+          attemptCount: 1,
+        }),
+        expect.objectContaining({
+          event: 'payment_completed',
+          paymentId: buildPayment().id,
+          attemptCount: 1,
+          status: 'succeeded',
+          durationMs: 0,
+        }),
+      ]),
+    );
   });
 
   it('schedules a transient failure and succeeds on retry', async () => {
+    const logs = captureLogs();
     let currentTime = new Date('2026-11-13T12:01:00.000Z');
     const repository = await createSeededRepository();
     const gateway = new ScriptedPaymentGateway([
@@ -76,6 +97,8 @@ describe('PaymentWorker', () => {
       clock,
       defaultWorkerOptions,
       () => 0,
+      undefined,
+      logs.logger,
     );
 
     await worker.processNextPayment();
@@ -98,6 +121,20 @@ describe('PaymentWorker', () => {
       attemptCount: 2,
       version: 5,
     });
+    expect(logs.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'payment_retry_scheduled',
+          paymentId: buildPayment().id,
+          nextAttemptAt: '2026-11-13T12:01:00.250Z',
+        }),
+        expect.objectContaining({
+          event: 'payment_completed',
+          paymentId: buildPayment().id,
+          attemptCount: 2,
+        }),
+      ]),
+    );
   });
 
   it('fails immediately after a permanent provider decline', async () => {
@@ -182,6 +219,7 @@ describe('PaymentWorker', () => {
   });
 
   it('does not overwrite an operator update with a late gateway result', async () => {
+    const logs = captureLogs();
     let resolveGateway: ((result: PaymentGatewayResult) => void) | undefined;
     const repository = await createSeededRepository();
     const gateway: PaymentGateway = {
@@ -195,6 +233,9 @@ describe('PaymentWorker', () => {
       gateway,
       { now: () => new Date('2026-11-13T12:01:00.000Z') },
       defaultWorkerOptions,
+      undefined,
+      undefined,
+      logs.logger,
     );
     const processing = worker.processNextPayment();
 
@@ -229,6 +270,52 @@ describe('PaymentWorker', () => {
       failureCode: 'cancelled_by_operator',
       version: 3,
     });
+    expect(logs.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'payment_worker_result_discarded',
+          paymentId: buildPayment().id,
+          reason: 'version_conflict',
+        }),
+      ]),
+    );
+    expect(
+      logs.entries().some((entry) => entry.event === 'payment_completed'),
+    ).toBe(false);
+  });
+
+  it('correlates persistence failures without recording raw provider errors', async () => {
+    const logs = captureLogs();
+    const repository = await createSeededRepository();
+    vi.spyOn(repository, 'updatePayment').mockRejectedValue(
+      new Error('storage-secret'),
+    );
+    const worker = new PaymentWorker(
+      repository,
+      new ScriptedPaymentGateway([new Error('provider-secret')]),
+      { now: () => new Date('2026-11-13T12:01:00.000Z') },
+      defaultWorkerOptions,
+      () => 0,
+      undefined,
+      logs.logger,
+    );
+
+    await expect(worker.processNextPayment()).rejects.toThrow('storage-secret');
+    expect(logs.text()).not.toContain('-secret');
+    expect(logs.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'payment_gateway_error',
+          paymentId: buildPayment().id,
+          level: 40,
+        }),
+        expect.objectContaining({
+          event: 'payment_persistence_failed',
+          paymentId: buildPayment().id,
+          level: 50,
+        }),
+      ]),
+    );
   });
 
   it('polls without overlapping and can be stopped', async () => {

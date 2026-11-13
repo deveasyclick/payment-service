@@ -1,7 +1,7 @@
 import { once } from 'node:events';
 import type { Server } from 'node:http';
 
-import pino from 'pino';
+import { createLogger } from './infrastructure/logging/logger.js';
 
 import { createApp } from './app.js';
 import { loadConfig } from './config/index.js';
@@ -14,7 +14,7 @@ import { SystemClock } from './shared/helpers/clock.js';
 import { UuidGenerator } from './shared/helpers/id-generator.js';
 
 const config = loadConfig();
-const logger = pino({ level: config.logLevel });
+const logger = createLogger(config.logLevel);
 const clock = new SystemClock();
 const repository = new JsonPaymentRepository({
   filePath: config.dataFilePath,
@@ -35,17 +35,25 @@ const worker = new PaymentWorker(
   config.worker,
   Math.random,
   (error) => {
-    logger.error({ err: error }, 'Payment worker poll failed');
+    logger.error(
+      { event: 'payment_worker_poll_failed', err: error },
+      'Payment worker poll failed',
+    );
   },
+  logger,
 );
 
 let ready = false;
 const app = createApp({
   config,
+  logger,
   paymentService,
   isReady: () => ready,
   reportUnexpectedError: (error, requestId) => {
-    logger.error({ err: error, requestId }, 'HTTP request failed');
+    logger.error(
+      { event: 'http_unexpected_error', err: error, requestId },
+      'HTTP request failed',
+    );
   },
 });
 
@@ -54,6 +62,10 @@ async function start(): Promise<void> {
   const recoveredPayments = await repository.recoverExpiredPayments(
     clock.now(),
     config.worker.leaseMs,
+  );
+  logger.info(
+    { event: 'payment_leases_recovered', recoveredPayments },
+    'Expired payment leases recovered',
   );
 
   worker.start();
@@ -68,7 +80,7 @@ async function start(): Promise<void> {
 
   ready = true;
   logger.info(
-    { port: config.port, recoveredPayments },
+    { event: 'service_started', port: config.port, recoveredPayments },
     'Payment service started',
   );
   installShutdownHandlers(server);
@@ -87,7 +99,10 @@ function installShutdownHandlers(server: Server): void {
 
 async function stop(server: Server, signal: NodeJS.Signals): Promise<void> {
   ready = false;
-  logger.info({ signal }, 'Payment service stopping');
+  logger.info(
+    { event: 'service_stopping', signal },
+    'Payment service stopping',
+  );
 
   const [httpResult, workerResult] = await Promise.allSettled([
     closeHttpServer(server, config.worker.shutdownTimeoutMs),
@@ -108,10 +123,14 @@ async function stop(server: Server, signal: NodeJS.Signals): Promise<void> {
     logger.warn('Active payment work exceeded the shutdown deadline');
   }
 
-  logger.info('Payment service stopped');
+  logger.info({ event: 'service_stopped' }, 'Payment service stopped');
+  logger.flush();
 }
 
 void start().catch((error: unknown) => {
   process.exitCode = 1;
-  logger.fatal({ err: error }, 'Payment service failed to start');
+  logger.fatal(
+    { event: 'service_startup_failed', err: error },
+    'Payment service failed to start',
+  );
 });

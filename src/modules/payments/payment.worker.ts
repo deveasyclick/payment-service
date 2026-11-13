@@ -8,6 +8,7 @@ import type { PaymentWorkerOptions } from './payment-worker.types.js';
 import { assertPaymentTransitionAllowed } from './payment.state-machine.js';
 import type { Payment, PaymentFailureCode } from './payment.types.js';
 import type { Clock } from '../../shared/types/clock.types.js';
+import type { ServiceLogger } from '../../shared/types/logger.types.js';
 
 export class PaymentWorker {
   private activeAttemptController: AbortController | undefined;
@@ -22,6 +23,7 @@ export class PaymentWorker {
     private readonly options: PaymentWorkerOptions,
     private readonly random: () => number = Math.random,
     private readonly reportError: (error: unknown) => void = () => undefined,
+    private readonly logger?: ServiceLogger,
   ) {}
 
   start(): void {
@@ -77,11 +79,33 @@ export class PaymentWorker {
       return false;
     }
 
+    this.logger?.info(
+      {
+        event: 'payment_attempt_started',
+        paymentId: claimedPayment.id,
+        attemptCount: claimedPayment.attemptCount,
+        version: claimedPayment.version,
+      },
+      'Payment attempt started',
+    );
+
     let result: PaymentGatewayResult;
 
     try {
       result = await this.processWithTimeout(claimedPayment);
     } catch (error) {
+      this.logger?.warn(
+        {
+          event: 'payment_gateway_error',
+          paymentId: claimedPayment.id,
+          attemptCount: claimedPayment.attemptCount,
+          failureCode:
+            error instanceof GatewayAttemptTimeoutError
+              ? 'processing_timeout'
+              : 'processing_error',
+        },
+        'Payment gateway attempt failed',
+      );
       await this.retryOrFail(
         claimedPayment,
         error instanceof GatewayAttemptTimeoutError
@@ -167,7 +191,7 @@ export class PaymentWorker {
       version: payment.version + 1,
     };
 
-    await this.repository.updatePayment(retryPayment, payment.version);
+    await this.persistOutcome(payment, retryPayment, 'payment_retry_scheduled');
   }
 
   private async completePayment(
@@ -201,7 +225,57 @@ export class PaymentWorker {
       version: payment.version + 1,
     };
 
-    await this.repository.updatePayment(completedPayment, payment.version);
+    await this.persistOutcome(payment, completedPayment, 'payment_completed');
+  }
+
+  private async persistOutcome(
+    claimed: Payment,
+    next: Payment,
+    event: string,
+  ): Promise<void> {
+    const fields = {
+      paymentId: claimed.id,
+      attemptCount: claimed.attemptCount,
+      version: claimed.version,
+      durationMs: Math.max(
+        0,
+        this.clock.now().getTime() -
+          Date.parse(claimed.processingStartedAt ?? claimed.updatedAt),
+      ),
+    };
+
+    try {
+      const result = await this.repository.updatePayment(next, claimed.version);
+      if (result.kind !== 'updated') {
+        this.logger?.warn(
+          {
+            ...fields,
+            event: 'payment_worker_result_discarded',
+            reason: result.kind,
+          },
+          'Stale worker result discarded',
+        );
+        return;
+      }
+
+      this.logger?.info(
+        {
+          ...fields,
+          event,
+          status: next.status,
+          version: next.version,
+          nextAttemptAt: next.nextAttemptAt,
+          failureCode: next.failureCode,
+        },
+        'Payment attempt outcome persisted',
+      );
+    } catch (error) {
+      this.logger?.error(
+        { ...fields, event: 'payment_persistence_failed', err: error },
+        'Payment outcome persistence failed',
+      );
+      throw error;
+    }
   }
 
   private retryDelayMs(attemptCount: number): number {
