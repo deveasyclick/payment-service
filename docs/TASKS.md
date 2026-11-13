@@ -195,6 +195,8 @@ The milestones below are intentionally sequential. Each should leave the reposit
 
 ## 10. Complete end-to-end verification and delivery polish
 
+**Status:** implementation and regression coverage complete; unrestricted release verification pending. See [VERIFICATION.md](./VERIFICATION.md): 143 non-socket tests pass, while the 14 Supertest scenarios are blocked by socket permissions and registry access prevents the audit/clean-install checks. A CI workflow runs the full verification commands without exclusions.
+
 **Work**
 
 - Add remaining integration tests for races, disk failures, retries, recovery, and shutdown.
@@ -214,16 +216,19 @@ The milestones below are intentionally sequential. Each should leave the reposit
 
 ## Final review checklist
 
-- [ ] API behavior and OpenAPI agree.
-- [ ] Idempotent create is atomic and tested.
-- [ ] Invalid transitions and stale writes cannot corrupt terminal state.
-- [ ] HTTP response is independent from asynchronous processing completion.
-- [ ] Retries are bounded, classified, and observable.
-- [ ] Pending and abandoned work recover after restart.
-- [ ] JSON writes are serialized and atomically replace valid storage.
-- [ ] Startup and shutdown behavior are deterministic.
-- [ ] Errors are useful to clients without leaking internals.
-- [ ] Logs are structured, correlated, and redact sensitive values.
-- [ ] Authentication and input/resource bounds are enforced as documented.
-- [ ] Unit and integration tests are deterministic and isolated.
-- [ ] Scope limitations and production migration path are candidly documented.
+- [x] Key API schemas, examples, and response codes agree with OpenAPI in contract tests.
+- [x] Idempotent create is atomic and tested.
+- [x] Invalid transitions and stale writes cannot corrupt terminal state.
+- [x] HTTP response is independent from asynchronous processing completion.
+- [x] Retries are bounded, classified, and observable.
+- [x] Pending and abandoned work recover after restart.
+- [x] JSON writes are serialized and atomically replace valid storage.
+- [x] Startup/shutdown ordering, deadlines, and failures have deterministic tests.
+- [x] Errors are useful to clients without leaking internals.
+- [x] Logs are structured, correlated, and redact sensitive values.
+- [x] Authentication and input/resource bounds are implemented with tests.
+- [x] Executed unit and integration tests are deterministic and isolated.
+- [x] Scope limitations and production migration path are candidly documented.
+- [ ] Full Supertest suite passes in an environment that permits socket binding.
+- [ ] Clean installation and registry-backed dependency audit pass.
+- [ ] Real process startup/shutdown and browser documentation smoke checks pass locally or in CI.

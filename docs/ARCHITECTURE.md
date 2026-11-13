@@ -47,9 +47,9 @@ The application will be separated into small layers:
 payment-service/
 ├── src/
 │   ├── app.ts
-│   ├── server-lifecycle.ts
-│   ├── server-lifecycle.types.ts
+│   ├── main.ts
 │   ├── server.ts
+│   ├── server.types.ts
 │   ├── config/
 │   │   ├── config.const.ts
 │   │   ├── config.schema.ts
@@ -128,13 +128,16 @@ payment-service/
 │   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
-│   │   ├── server-lifecycle.test.ts
+│   │   ├── server.test.ts
 │   │   ├── request-logging.test.ts
 │   │   ├── openapi-contract.test.ts
 │   │   ├── documentation-routes.test.ts
 │   │   ├── health-and-errors.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
+│   │   ├── atomic-file-writer.test.ts
+│   │   ├── payment-lifecycle.test.ts
+│   │   ├── startup-logging.test.ts
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
@@ -150,13 +153,18 @@ payment-service/
 ├── vitest.config.ts
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   └── TASKS.md
+│   ├── TASKS.md
+│   └── VERIFICATION.md
+├── .github/
+│   └── workflows/
+│       └── ci.yml
 └── README.md
 ```
 
 Responsibilities and dependency rules:
 
-- `app.ts` creates the Express application without opening a port; `server.ts` wires concrete dependencies and owns the process lifecycle.
+- `app.ts` creates the Express application without opening a port; `main.ts` loads configuration, wires concrete dependencies, starts the server, and registers signal handlers.
+- `server.ts` contains the `PaymentServer` class, which owns readiness, startup/shutdown ordering, worker lifecycle, HTTP shutdown deadlines, and signal handling. Types are in `server.types.ts`. The class accepts injected dependencies and can be imported without side effects; `main.ts` is the executable entry point.
 - `modules/payments` owns payment-specific types, state rules, use cases, repository contracts and implementations, worker orchestration, and routes.
 - `infrastructure/storage` owns file-database mechanics, serialization schemas, the versioned storage document, and atomic file replacement. This mirrors the boundary between database infrastructure and feature repositories in a database-backed service.
 - Other `infrastructure` folders contain cross-module technical adapters such as the simulated gateway and Pino. Domain rules do not import these implementations.
@@ -361,6 +369,8 @@ Persistence behavior:
 
 The file is excluded from Git. The data directory is created on startup. Tests use an isolated temporary directory or an in-memory repository implementing the same interface.
 
+Startup validation checks state-specific requirements: processing payments require a lease timestamp and a started attempt, failed payments require a failure code, and retry timestamps are allowed only for pending payments. Idempotency keys use own-property lookups and entry-based validation so printable keys such as `constructor` and `__proto__` cannot collide with object prototypes or disappear during parsing.
+
 **Why:** writing directly to the destination risks truncated JSON after a crash. Atomic replacement plus serialized mutations is compact and adequate for one process. A repository boundary preserves a clean migration path to PostgreSQL, where unique idempotency keys and row versions would enforce the same invariants.
 
 ## 8. Asynchronous processing, retries, and recovery
@@ -374,8 +384,8 @@ The worker starts after repository initialization and stops accepting work durin
 - Transient failures retry up to 3 total attempts with exponential backoff (for example, 250 ms then 500 ms) plus bounded jitter in runtime. Tests inject the clock/backoff or disable jitter.
 - Permanent failures fail immediately. Unknown gateway exceptions are treated as transient until attempts are exhausted, while only a sanitized failure code is persisted.
 - A per-attempt timeout prevents the worker from waiting forever.
-- On startup, `pending` payments remain eligible. A `processing` payment older than the configured lease is recovered to `pending` and retried.
-- Graceful shutdown stops polling and waits for an active attempt only up to a bounded deadline. If it cannot finish, lease recovery handles it on restart.
+- On startup and before each claim, a `processing` payment with an expired lease is requeued if attempts remain, or failed with `attempts_exhausted`. Still-active leases are rechecked on later polls, covering quick restarts and completion write failures without requiring another restart. Interrupted claims consume attempts.
+- Graceful shutdown stops polling and waits for an active attempt only up to a bounded deadline. At the deadline the attempt is aborted and its persisted claim retained for recovery; no retry is written during the abort path. The gateway must release its own resources on cancellation. Already-running native filesystem operations cannot be cancelled by this deadline.
 
 The worker's completion update includes the version it claimed. If an operator changed the payment meanwhile, the completion becomes a no-op and is logged rather than overwriting the newer state.
 
@@ -383,7 +393,7 @@ The worker's completion update includes the version it claimed. If an operator c
 
 ### Worker process boundary
 
-The API and worker deliberately run in the same Node.js process. `server.ts` starts both and injects the same repository instance, so all HTTP and worker mutations pass through one write queue and read the latest published snapshot. No separate worker command is provided.
+The API and worker deliberately run in the same Node.js process. `main.ts` injects the same repository instance into the API and worker, then starts them through `PaymentServer`, so all HTTP and worker mutations pass through one write queue and read the latest published snapshot. No separate worker command is provided.
 
 The JSON repository loads its document into memory at initialization. A separate worker process would have its own cached document and mutation queue. It would not observe payments created by the API after initialization, and writes from either process could replace the other's newer document. For example, an API write adding payment B could be lost when the worker saves payment A using an older snapshot that does not contain B. Atomic rename protects file integrity, but provides no cross-process locking or transaction isolation. Likewise, `version` comparisons against separate cached snapshots cannot prevent these lost updates.
 
@@ -439,6 +449,8 @@ Expected client validation failures use an appropriate lower log level to avoid 
 Request serialization allows only the method and original pathname; mounted prefixes are preserved and query strings excluded. Response serialization allows only the status. Query strings, headers, bodies, and payment references are omitted. Common secret/body fields are also redacted at the logger boundary. Error serialization keeps type and stack call sites, excluding messages, causes, and custom properties. This sacrifices raw error-message detail to avoid leaking provider payloads or credentials. Logs use fixed messages and allowlisted context; field redaction cannot sanitize arbitrary free text.
 
 `info` records normal requests and persisted outcomes, `warn` records expected HTTP client errors, gateway exceptions/timeouts, and stale worker results, and `error` records unexpected HTTP, persistence, and polling failures. Logger instances and streams are injected; the app factory defaults to a silent logger. No mutable global logger is required.
+
+Catch blocks must log a handled failure or propagate it to a logging boundary; empty catches and no-op rejection handlers are disallowed by ESLint. Secondary storage close/cleanup failures are logged without replacing the original write error. HTTP handling uses the injected logger directly, rather than an error-reporting callback that could silently fail. Configuration validation occurs inside the startup error boundary. If both listening and worker cleanup fail, an aggregate retains both failures, and the error serializer records their types and call sites without raw messages. Expected absence of a new storage file is recorded as an informational initialization event.
 
 **Why:** structured, correlated events make asynchronous flows debuggable without leaking request bodies or secrets.
 
