@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, the secured Express API, asynchronous processing, restart recovery, graceful server lifecycle, and correlated/redacted logging are complete. The OpenAPI contract remains to be implemented.
+> **Project status:** implementation milestones 1–9 are complete, including the API contract and operating guide. Final delivery verification and polish remain in Task 10.
 
 ## What this project demonstrates
 
@@ -20,7 +20,7 @@ A small, production-minded payment-processing microservice designed for a Node.j
 
 The solution deliberately uses one Node.js process, an in-process worker, and JSON-file persistence. This keeps the assessment easy to run and review while still addressing failure handling honestly.
 
-## Planned stack
+## Stack
 
 - Node.js and TypeScript
 - Express
@@ -56,6 +56,139 @@ The available quality commands are:
 | `pnpm test`         | Run the Vitest suite once.                                  |
 | `pnpm test:watch`   | Run Vitest in watch mode.                                   |
 
+## Run locally
+
+Use the pinned Node.js and pnpm versions above, then run from the repository root:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+This starts the API and worker together at `http://localhost:3000`. By default authentication is disabled locally, payments are stored at `./data/payments.json`, and the simulated provider succeeds after 500 ms. A payment may finish before you retrieve it.
+
+In another terminal:
+
+```bash
+curl -i http://localhost:3000/health/live
+curl -i http://localhost:3000/health
+curl -i http://localhost:3000/health/ready
+```
+
+For a compiled run:
+
+```bash
+pnpm build
+pnpm start
+```
+
+Environment variables are read once at startup. `pnpm dev` and `pnpm start` do not automatically load `.env`. To use a local file with Node's built-in environment loader:
+
+```bash
+cp .env.example .env
+node --env-file=.env --watch --import tsx src/server.ts
+```
+
+For compiled code use `node --env-file=.env dist/server.js` after building. Exported environment variables also work with all commands. Stop the current service before switching scenarios; never run multiple processes against the same JSON file. `Ctrl+C` triggers graceful shutdown. The relative data path is resolved from the working directory; reuse it to resume persisted work across restarts.
+
+## Configuration
+
+All durations are milliseconds unless stated otherwise. Invalid configuration stops startup. API authentication is enabled whenever `API_KEY` is supplied and is mandatory in production.
+
+| Variable                        | Default                | Meaning and bounds                                                                       |
+| ------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
+| `NODE_ENV`                      | `development`          | `development`, `test`, or `production`.                                                  |
+| `PORT`                          | `3000`                 | Integer 1–65535.                                                                         |
+| `LOG_LEVEL`                     | `info`                 | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, or `silent`.                         |
+| `PAYMENT_DATA_FILE`             | `./data/payments.json` | Nonempty JSON-file path; parent directory is created.                                    |
+| `API_KEY`                       | unset                  | At least 16 characters after trimming; empty disables authentication outside production. |
+| `TRUST_PROXY_HOPS`              | `0`                    | Integer 0–10; enable only for a known proxy deployment.                                  |
+| `RATE_LIMIT_WINDOW_MS`          | `900000`               | General per-IP window; 1000–86400000.                                                    |
+| `RATE_LIMIT_MAX`                | `100`                  | General per-IP quota; 1–100000.                                                          |
+| `MUTATION_RATE_LIMIT_WINDOW_MS` | `60000`                | Additional mutation window; 1000–86400000.                                               |
+| `MUTATION_RATE_LIMIT_MAX`       | `20`                   | Additional mutation quota; 1–100000.                                                     |
+| `WORKER_POLL_INTERVAL_MS`       | `250`                  | Delay between polls; 10–60000.                                                           |
+| `WORKER_ATTEMPT_TIMEOUT_MS`     | `5000`                 | Gateway attempt deadline; 100–300000.                                                    |
+| `WORKER_LEASE_MS`               | `30000`                | Abandoned processing lease; 100–3600000 and strictly greater than the attempt timeout.   |
+| `WORKER_MAX_ATTEMPTS`           | `3`                    | Total attempts, including the initial attempt; 1–10.                                     |
+| `WORKER_RETRY_BASE_DELAY_MS`    | `250`                  | Exponential retry base; 10–300000, with up to 20% jitter.                                |
+| `WORKER_SHUTDOWN_TIMEOUT_MS`    | `10000`                | Concurrent HTTP and worker grace period; 100–300000.                                     |
+| `SIMULATED_GATEWAY_LATENCY_MS`  | `500`                  | Simulated attempt latency; 0–300000.                                                     |
+| `SIMULATED_GATEWAY_OUTCOME`     | `succeeded`            | `succeeded`, `declined`, or `transient_failure`; fixed for the lifetime of this process. |
+
+If authentication is enabled, add `-H 'X-API-Key: your-configured-key'` to payment requests below. Health checks stay public. No payment method or card details are accepted.
+
+## Exercise the payment flow
+
+The examples below use local defaults with authentication disabled. The response body contains the payment ID; copy it into `payment_id` for subsequent requests. `curl -i` displays status codes and response headers.
+
+### Create, retrieve, and replay
+
+```bash
+curl -i -X POST http://localhost:3000/payments \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: demo-success-001' \
+  -H 'X-Request-Id: demo-request-001' \
+  -d '{"amount":2500,"currency":"NGN","reference":"order-123"}'
+
+payment_id='paste-the-returned-id-here'
+curl -i "http://localhost:3000/payments/$payment_id"
+```
+
+Creation returns `202` with `Location`. The worker then moves the payment from `pending` through `processing` to `succeeded`; repeat GET to observe the current state. Here `2500 NGN` means **2,500 kobo (₦25.00)**.
+
+Repeat the exact POST with the same key and body to get `200` and `Idempotent-Replayed: true`. It returns the original payment's current state. Reuse that key with `amount: 3000` to get `409 IDEMPOTENCY_CONFLICT`. Use a new idempotency key for each new payment; restarting does not clear keys in the data file.
+
+### Observe decline, retries, and timeout
+
+Stop the current server, then choose one scenario. Each uses a separate data file for isolation:
+
+```bash
+# Permanent decline: failed/provider_declined after one attempt.
+SIMULATED_GATEWAY_OUTCOME=declined PAYMENT_DATA_FILE=./data/declines.json pnpm dev
+
+# Transient failure: retries, then failed/processing_error after three attempts.
+SIMULATED_GATEWAY_OUTCOME=transient_failure PAYMENT_DATA_FILE=./data/retries.json pnpm dev
+
+# Latency exceeds timeout: retries, then failed/processing_timeout.
+SIMULATED_GATEWAY_LATENCY_MS=1000 WORKER_ATTEMPT_TIMEOUT_MS=100 PAYMENT_DATA_FILE=./data/timeouts.json pnpm dev
+```
+
+Run only one command at a time, then create and retrieve a payment as above. Inspect `attemptCount` and `failureCode` in GET responses. Watch `payment_attempt_started`, `payment_retry_scheduled`, and `payment_completed` JSON log events by `paymentId`; retry events expose the internal `nextAttemptAt` timestamp without exposing it in API responses. The fixed-outcome simulator cannot demonstrate transient failure followed by success in one run; deterministic scripted-gateway tests cover that case.
+
+### Manually finalize an active payment
+
+To leave time for an operator override, start a slow successful provider after stopping the previous service:
+
+```bash
+SIMULATED_GATEWAY_LATENCY_MS=120000 WORKER_ATTEMPT_TIMEOUT_MS=180000 WORKER_LEASE_MS=240000 PAYMENT_DATA_FILE=./data/operator.json pnpm dev
+```
+
+Create a payment with a new idempotency key, set `payment_id`, then read the current version:
+
+```bash
+curl -sS "http://localhost:3000/payments/$payment_id"
+```
+
+Copy its `version` into `expected_version`, then finalize it:
+
+```bash
+expected_version=2 # Replace with the version returned by GET.
+curl -i -X PATCH "http://localhost:3000/payments/$payment_id/status" \
+  -H 'Content-Type: application/json' \
+  -d "{\"status\":\"failed\",\"failureCode\":\"cancelled_by_operator\",\"expectedVersion\":$expected_version}"
+```
+
+Expect `200` and `failed`. To mark success instead, send `{"status":"succeeded","expectedVersion":2}` using the latest version and omit `failureCode`. A stale version returns `412`; GET again and reconsider the action. A terminal payment returns `409` when updated using its current version. When the delayed worker finishes, its stale result is discarded and logged as `payment_worker_result_discarded`.
+
+## API contract
+
+Open **http://localhost:3000/doc** after starting the service to browse the API in Swagger UI and try requests. The raw contract is available at **http://localhost:3000/openapi.json** and in the checked-in [OpenAPI 3.1 contract](./openapi.json). It documents the payment/health endpoints, request/response schemas, authentication, correlation and rate-limit headers, errors, and examples. The server URL is relative, so browser requests use the current service host and port.
+
+Documentation routes are public and use the general rate limit. If `API_KEY` is configured, click **Authorize** in Swagger UI and enter that key before trying payment requests. Authentication is not persisted across page reloads. The page loads a pinned Swagger UI 5.34.1 bundle and stylesheet from jsDelivr, so the browser needs internet access; the raw JSON contract remains available without the CDN. External contract validation is disabled. Only `/doc` permits the CDN in its content security policy. No extra npm dependency is required. Deploy the root `openapi.json` alongside `dist/`, preserving the project layout.
+
+`tests/unit/openapi-contract.test.ts` compares the request schemas to Zod's JSON Schema output, validates documented request examples, resolves local references, and checks public fields, enums, authentication, and response-code coverage. These checks catch key drift; they do not replace a full OpenAPI validator or the API integration suite.
+
 ## Project structure
 
 ```text
@@ -68,8 +201,7 @@ payment-service/
 │   ├── config/
 │   │   ├── config.const.ts
 │   │   ├── config.schema.ts
-│   │   ├── index.ts
-│   │   └── load-config.ts
+│   │   └── index.ts
 │   ├── modules/
 │   │   └── payments/
 │   │       ├── payment.const.ts
@@ -94,6 +226,9 @@ payment-service/
 │   │       ├── payment.worker.ts
 │   │       └── payment.routes.ts
 │   ├── infrastructure/
+│   │   ├── documentation/
+│   │   │   ├── documentation.const.ts
+│   │   │   └── documentation.routes.ts
 │   │   ├── storage/
 │   │   │   ├── atomic-file-writer.ts
 │   │   │   ├── payment-storage-state.ts
@@ -111,8 +246,7 @@ payment-service/
 │   │   ├── error-handler.ts
 │   │   ├── rate-limit.ts
 │   │   ├── request-id.ts
-│   │   ├── request-logging.ts
-│   │   └── validate.ts
+│   │   └── request-logging.ts
 │   └── shared/
 │       ├── errors/
 │       │   ├── configuration.errors.ts
@@ -144,17 +278,19 @@ payment-service/
 │   │   │   └── helpers.test.ts
 │   │   ├── server-lifecycle.test.ts
 │   │   ├── request-logging.test.ts
+│   │   ├── openapi-contract.test.ts
+│   │   ├── documentation-routes.test.ts
+│   │   ├── health-and-errors.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
 │       ├── capture-logs.ts
-│       ├── create-test-app.ts
 │       ├── payment-fixtures.ts
-│       ├── scripted-payment-gateway.ts
-│       └── test-clock.ts
-├── openapi.yaml
+│       ├── request-app.ts
+│       └── scripted-payment-gateway.ts
+├── openapi.json
 ├── .env.example
 ├── .gitignore
 ├── package.json
@@ -204,7 +340,7 @@ For NGN, the minor unit is kobo:
 
 This represents **2,500 kobo**, or **₦25.00**. It does not represent ₦2,500.
 
-Integer minor units avoid floating-point rounding errors. The eventual OpenAPI document will describe this rule on the field and provide currency-specific examples.
+Integer minor units avoid floating-point rounding errors. The OpenAPI document describes this rule on the field and includes the NGN example. Currency validation checks three uppercase ASCII letters only; it does not verify registered currency codes or convert currency exponents. Clients must supply the correct minor-unit count.
 
 ## Payment lifecycle
 
@@ -291,6 +427,7 @@ The caller supplies the last version it read. If another request or the backgrou
 
 | Endpoint            | Purpose                                                      |
 | ------------------- | ------------------------------------------------------------ |
+| `GET /health`       | Liveness alias; same response as `/health/live`.             |
 | `GET /health/live`  | Confirms that the process is running.                        |
 | `GET /health/ready` | Confirms that storage is initialized and processing can run. |
 
@@ -305,6 +442,7 @@ Errors use one consistent envelope:
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "Request validation failed",
+    "path": "/payments",
     "details": [
       {
         "path": "amount",
@@ -316,7 +454,9 @@ Errors use one consistent envelope:
 }
 ```
 
-Expected errors have stable machine-readable codes. Unexpected failures return a generic `500 Internal Server Error`; stack traces, file paths, and raw provider errors are logged but never returned to clients.
+Expected errors have stable machine-readable codes. Unexpected failures return a generic `500 Internal Server Error`; logs retain error type and stack call sites with correlation. Raw provider messages are omitted and internal details are never returned to clients.
+
+Every error includes `error.path`: the original request pathname with mounted prefixes, excluding query strings. Validation `details[].path` identifies the invalid field instead. Unknown routes return `404 ROUTE_NOT_FOUND`; `/health` and `/health/live` both return `200 {"status":"ok"}` and do not check readiness. Use `/health/ready` for readiness.
 
 ## Asynchronous processing
 
@@ -356,7 +496,7 @@ Malformed JSON and unsupported storage versions cause startup to fail without re
 
 ## Security controls
 
-The planned implementation includes:
+The implementation includes:
 
 - Optional static API-key authentication, required in production mode
 - Timing-safe secret comparison
@@ -370,7 +510,7 @@ The planned implementation includes:
 - CORS disabled by default
 - Configurable rate limiting
 
-Proposed rate-limit defaults:
+Rate-limit defaults:
 
 | Scope                                              | Limit                                     |
 | -------------------------------------------------- | ----------------------------------------- |
@@ -396,15 +536,15 @@ Pino emits structured JSON logs containing request and payment correlation data.
 
 Sensitive headers, request bodies, and raw payment-provider errors are excluded or redacted.
 
-HTTP logs carry `requestId`, method, status, and `responseTime` in milliseconds. Payment creation/replay and status-update logs link that request to `paymentId`; worker logs use the same `paymentId` with `attemptCount`, outcome, and `durationMs`. Search by `requestId` to inspect an HTTP request, then by `paymentId` to follow its background processing across attempts and restarts. Request IDs are not stored in the payment document.
+HTTP logs carry `requestId`, `req.method`, `req.path`, response status, and `responseTime` in milliseconds. `req.path` is the original request pathname, including mounted prefixes and excluding query strings. Payment creation/replay and status-update logs link that request to `paymentId`; worker logs use the same `paymentId` with `attemptCount`, outcome, and `durationMs`. Search by `requestId` to inspect an HTTP request, then by `paymentId` to follow its background processing across attempts and restarts. Request IDs are not stored in the payment document.
 
-Successful requests and persisted worker outcomes use `info`; expected client failures and discarded stale worker results use `warn`; unexpected HTTP, repository, and polling failures use `error`. `LOG_LEVEL` controls output. Request URLs, query strings, headers, bodies, and payment references are omitted. Error serialization retains the type and stack call sites while omitting messages, causes, and custom properties that may contain sensitive values. Explicit redaction of common secret fields provides an additional safeguard; callers must still log only approved fields and fixed messages.
+Successful requests and persisted worker outcomes use `info`; expected client failures and discarded stale worker results use `warn`; unexpected HTTP, repository, and polling failures use `error`. `LOG_LEVEL` controls output. Query strings, headers, bodies, and payment references are omitted. Error serialization retains the type and stack call sites while omitting messages, causes, and custom properties that may contain sensitive values. Explicit redaction of common secret fields provides an additional safeguard; callers must still log only approved fields and fixed messages.
 
 The app factory accepts an injected logger and defaults to silent logging for tests. Captured-log tests verify correlation, HTTP levels and durations, secret redaction, retry/completion events, and stale-result handling without changing global logger state.
 
 ## Testing approach
 
-Vitest and Supertest will cover the highest-risk behaviors:
+Vitest and Supertest cover the highest-risk behaviors:
 
 - Allowed and forbidden status transitions
 - Validation boundaries for money and currency
@@ -419,7 +559,7 @@ Vitest and Supertest will cover the highest-risk behaviors:
 - Graceful shutdown
 - Log redaction
 
-The gateway, clock, timers, and ID generator will be injectable where necessary so tests do not depend on randomness or real-time sleeps.
+The gateway, clock, timers, and ID generator are injectable where necessary so tests do not depend on randomness or real-time sleeps. Run `pnpm test` locally for the complete suite, including Supertest tests that bind an ephemeral local port. Environments that prohibit socket binding can run `pnpm exec vitest run --exclude tests/integration/payments-api.test.ts`; that excludes API verification and is not a substitute for a full local run.
 
 ## Known limitations
 
@@ -433,6 +573,8 @@ The gateway, clock, timers, and ID generator will be injectable where necessary 
 - Refunds, captures, webhooks, payment listing, and pagination are outside the assessment scope.
 - Idempotency records do not initially expire.
 - File durability depends on same-filesystem atomic rename behavior.
+- The simulator's downstream idempotency cache is in memory and resets on restart; it does not prove a durable provider-side exactly-once guarantee.
+- Readiness reflects startup/shutdown state; it does not continuously probe storage or guarantee provider availability.
 
 A production evolution would replace JSON persistence with a transactional database, use database-backed or external job processing, adopt scoped service identities, and move distributed rate limiting to a shared store or gateway.
 

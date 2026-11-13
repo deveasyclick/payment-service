@@ -174,10 +174,12 @@ The milestones below are intentionally sequential. Each should leave the reposit
 
 ## 9. Publish API and operator documentation
 
+**Status:** complete. The contract is checked in as `openapi.json` and served at `/openapi.json`; `/doc` provides Swagger UI using pinned CDN assets. The README includes configuration and runnable operating scenarios, `tests/unit/openapi-contract.test.ts` checks key contract/schema drift, and documentation-route tests cover the UI/spec endpoints and security behavior.
+
 **Work**
 
 - Add the OpenAPI 3.1 contract with schemas, examples, authentication, rate-limit headers, and all error responses.
-- Optionally serve `/openapi.json` and Swagger UI at `/docs` if it remains lightweight.
+- Serve `/openapi.json` and Swagger UI at `/doc` using pinned CDN assets.
 - Add a README with setup, configuration, commands, `curl` examples, architecture summary, state diagram, and limitations.
 - Document how to observe successful, failed, retried, replayed, and manually finalized payments.
 

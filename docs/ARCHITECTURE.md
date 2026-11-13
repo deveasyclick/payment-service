@@ -53,8 +53,7 @@ payment-service/
 │   ├── config/
 │   │   ├── config.const.ts
 │   │   ├── config.schema.ts
-│   │   ├── index.ts
-│   │   └── load-config.ts
+│   │   └── index.ts
 │   ├── modules/
 │   │   └── payments/
 │   │       ├── payment.const.ts
@@ -79,6 +78,9 @@ payment-service/
 │   │       ├── payment.worker.ts
 │   │       └── payment.routes.ts
 │   ├── infrastructure/
+│   │   ├── documentation/
+│   │   │   ├── documentation.const.ts
+│   │   │   └── documentation.routes.ts
 │   │   ├── storage/
 │   │   │   ├── atomic-file-writer.ts
 │   │   │   ├── payment-storage-state.ts
@@ -96,8 +98,7 @@ payment-service/
 │   │   ├── error-handler.ts
 │   │   ├── rate-limit.ts
 │   │   ├── request-id.ts
-│   │   ├── request-logging.ts
-│   │   └── validate.ts
+│   │   └── request-logging.ts
 │   └── shared/
 │       ├── errors/
 │       │   ├── configuration.errors.ts
@@ -129,17 +130,19 @@ payment-service/
 │   │   │   └── helpers.test.ts
 │   │   ├── server-lifecycle.test.ts
 │   │   ├── request-logging.test.ts
+│   │   ├── openapi-contract.test.ts
+│   │   ├── documentation-routes.test.ts
+│   │   ├── health-and-errors.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
 │       ├── capture-logs.ts
-│       ├── create-test-app.ts
 │       ├── payment-fixtures.ts
-│       ├── scripted-payment-gateway.ts
-│       └── test-clock.ts
-├── openapi.yaml
+│       ├── request-app.ts
+│       └── scripted-payment-gateway.ts
+├── openapi.json
 ├── .env.example
 ├── .gitignore
 ├── package.json
@@ -301,7 +304,7 @@ Request:
 
 ### Health endpoints
 
-- `GET /health/live`: process is running; does not touch storage.
+- `GET /health` and `GET /health/live`: process is running; `/health` is a liveness alias. Neither touches storage or depends on readiness.
 - `GET /health/ready`: storage initialized and worker able to run.
 
 These endpoints are intentionally small and return no configuration or sensitive diagnostics.
@@ -313,6 +316,7 @@ These endpoints are intentionally small and return no configuration or sensitive
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "Request validation failed",
+    "path": "/payments",
     "details": [{ "path": "amount", "message": "Must be a positive integer" }],
     "requestId": "..."
   }
@@ -320,6 +324,8 @@ These endpoints are intentionally small and return no configuration or sensitive
 ```
 
 Expected errors have stable machine-readable codes. Unknown errors return a generic `500 Internal Server Error`; stack traces and internal file paths are logged, never sent to clients. Unknown routes return the same envelope with `404`.
+
+All errors include `error.path`, derived from the original request pathname so mounted route prefixes are retained. Query strings are excluded to avoid echoing query credentials. Validation `details[].path` continues to identify the invalid field rather than the request URL.
 
 ## 6. Validation and bounds
 
@@ -420,7 +426,7 @@ The limiter's default in-memory counter matches the service's single-process dep
 
 Pino emits structured JSON logs. `pino-http` associates each request with `requestId`. Logs cover:
 
-- request completion: method, status, duration, and request ID;
+- request completion: method, original pathname (`req.path`), status, duration, and request ID;
 - payment creation and idempotent replay using payment ID, never the idempotency key;
 - worker claim, attempt number, retry scheduling, terminal outcome, and processing duration;
 - stale-lease recovery and optimistic-concurrency conflicts;
@@ -430,7 +436,7 @@ Expected client validation failures use an appropriate lower log level to avoid 
 
 `requestId` links HTTP completion to payment creation/replay or status-update events, which include `paymentId`. Background events use that stable payment ID and `attemptCount`; the originating request ID is not persisted. A persisted retry or terminal result is logged only after the repository confirms the write. A version conflict produces `payment_worker_result_discarded` instead of a misleading completion event.
 
-Request serialization allows only the method; response serialization allows only the status. URLs, query strings, headers, bodies, and payment references are omitted. Common secret/body fields are also redacted at the logger boundary. Error serialization keeps type and stack call sites, excluding messages, causes, and custom properties. This sacrifices raw error-message detail to avoid leaking provider payloads or credentials. Logs use fixed messages and allowlisted context; field redaction cannot sanitize arbitrary free text.
+Request serialization allows only the method and original pathname; mounted prefixes are preserved and query strings excluded. Response serialization allows only the status. Query strings, headers, bodies, and payment references are omitted. Common secret/body fields are also redacted at the logger boundary. Error serialization keeps type and stack call sites, excluding messages, causes, and custom properties. This sacrifices raw error-message detail to avoid leaking provider payloads or credentials. Logs use fixed messages and allowlisted context; field redaction cannot sanitize arbitrary free text.
 
 `info` records normal requests and persisted outcomes, `warn` records expected HTTP client errors, gateway exceptions/timeouts, and stale worker results, and `error` records unexpected HTTP, persistence, and polling failures. Logger instances and streams are injected; the app factory defaults to a silent logger. No mutable global logger is required.
 
@@ -490,9 +496,15 @@ Each test gets its own application instance and repository. The application fact
 
 ## 14. API documentation
 
-An OpenAPI 3.1 document will describe every route, header, schema, status code, authentication scheme, error envelope, rate-limit response, and example. In particular, `amount` will be documented as an integer count of the currency's minor unit, with the NGN/kobo example. It will be checked into the repository and served read-only (for example at `/docs` with Swagger UI and `/openapi.json`) if the implementation remains small. Zod schemas should be the validation source of truth; generation or schema tests will detect drift between runtime validation and OpenAPI.
+The checked-in `openapi.json` describes all implemented endpoints, schemas, status codes, authentication, correlation and rate-limit headers, error envelopes, and examples. `amount` explicitly means integer minor units: `2500 NGN` is 2,500 kobo (₦25.00). Currency validation accepts three uppercase ASCII letters without checking a registry or performing exponent conversion.
 
-A README will explain setup, environment variables, commands, example `curl` flows, state transitions, and known limitations.
+`GET /doc` serves Swagger UI, `GET /doc/initializer.js` serves its local initialization script, and `GET /openapi.json` serves the checked-in contract. These routes are public and covered by the general rate limiter. Payment requests made through the UI retain normal API-key authentication. The contract uses a relative server URL to target the service's current host and port. The root JSON artifact must accompany `dist/` when deploying compiled code.
+
+The UI loads pinned Swagger UI 5.34.1 assets from jsDelivr without adding npm dependencies. This requires browser internet access and trusts that CDN for UI assets; the JSON contract can still be used offline. Only the documentation page allows the CDN in its content security policy, with scripts loaded externally rather than inline. Remote validation and persisted authorization are disabled. This keeps setup small while providing the requested interactive route; bundled local assets would remove the CDN dependency if offline UI support becomes necessary.
+
+Contract tests compare documented request schemas with JSON Schema generated from the existing Zod schemas, validate examples, resolve local references, and check public fields, enums, security, and key response codes. These targeted tests do not claim full OpenAPI specification validation. Documentation-route tests exercise the Express stack over in-memory HTTP streams, checking content, public access, scoped security headers, payment authentication, and rate limiting without binding a socket.
+
+The README explains setup, explicit `.env` loading, all configuration settings, commands, `curl` flows, state transitions, and limitations. Operating examples cover success, permanent decline, transient exhaustion, timeout, idempotent replay/conflict, and versioned operator finalization with a delayed gateway.
 
 **Why:** a checked-in contract is reviewable without running the service, while a served copy improves evaluator experience. Contract tests prevent documentation from becoming aspirational.
 
