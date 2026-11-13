@@ -320,8 +320,7 @@ payment-service/
 ├── vitest.config.ts
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   ├── TASKS.md
-│   └── VERIFICATION.md
+│   └── TASKS.md
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
@@ -595,7 +594,7 @@ The gateway, clock, timers, and ID generator are injectable where necessary so t
 
 The additional `payment-lifecycle.test.ts` integration suite exercises real Express requests, JSON persistence, and worker processing over in-memory HTTP streams. It covers asynchronous responses, concurrent idempotency, operator races, malformed/oversized bodies, disk failures, and restart recovery without requiring a listening port. Failure tests also verify temporary-file cleanup, bounded shutdown, startup ordering, and idempotency keys that match object-prototype names.
 
-The GitHub Actions workflow installs the pinned dependencies, runs formatting, linting, type-checking, the full test suite, build, and `pnpm audit --audit-level=high`. Registry failures or high-severity advisories fail verification; audit checks are not silently skipped. The workflow is included but has not been executed from this workspace. See [VERIFICATION.md](./docs/VERIFICATION.md) for observed results and remaining release checks.
+The GitHub Actions workflow installs the pinned dependencies, runs formatting, linting, type-checking, the full test suite, build, and `pnpm audit --audit-level=high`. Registry failures or high-severity advisories fail verification; audit checks are not silently skipped. The workflow is included but has not been executed from this workspace.
 
 ## Known limitations
 
@@ -618,4 +617,3 @@ A production evolution would replace JSON persistence with a transactional datab
 
 - [Architecture](./docs/ARCHITECTURE.md) — detailed decisions, rationale, contracts, failure behavior, and tradeoffs.
 - [Implementation tasks](./docs/TASKS.md) — sequential milestones, acceptance criteria, and suggested commits.
-- [Verification results](./docs/VERIFICATION.md) — completed checks, regression coverage, and checks awaiting an unrestricted environment.
