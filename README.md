@@ -34,21 +34,27 @@ The solution deliberately uses one Node.js process, an in-process worker, and JS
 
 ## Development tooling
 
-The project pins Node.js 24.14.0 in `.nvmrc` and npm 11.9.0 in `package.json`.
+The project pins Node.js 24.14.0 in `.nvmrc` and pnpm 11.15.0 through the `packageManager` and `engines` fields in `package.json`.
 
-Once dependencies are installed from the lockfile, the available quality commands are:
+Install dependencies exactly as recorded in `pnpm-lock.yaml`:
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Watch the TypeScript server entry point during development. |
-| `npm run build` | Compile production TypeScript into `dist`. |
-| `npm start` | Run the compiled server entry point. |
-| `npm run typecheck` | Run strict TypeScript checks without emitting files. |
-| `npm run lint` | Run type-aware ESLint checks. |
-| `npm run format` | Format supported files with Prettier. |
-| `npm run format:check` | Check formatting without changing files. |
-| `npm test` | Run the Vitest suite once. |
-| `npm run test:watch` | Run Vitest in watch mode. |
+```bash
+pnpm install --frozen-lockfile
+```
+
+The available quality commands are:
+
+| Command             | Purpose                                                     |
+| ------------------- | ----------------------------------------------------------- |
+| `pnpm dev`          | Watch the TypeScript server entry point during development. |
+| `pnpm build`        | Compile production TypeScript into `dist`.                  |
+| `pnpm start`        | Run the compiled server entry point.                        |
+| `pnpm typecheck`    | Run strict TypeScript checks without emitting files.        |
+| `pnpm lint`         | Run type-aware ESLint checks.                               |
+| `pnpm format`       | Format supported files with Prettier.                       |
+| `pnpm format:check` | Check formatting without changing files.                    |
+| `pnpm test`         | Run the Vitest suite once.                                  |
+| `pnpm test:watch`   | Run Vitest in watch mode.                                   |
 
 ## Project structure
 
@@ -125,18 +131,18 @@ The runtime JSON directory is intentionally absent from the committed tree. The 
 
 A payment contains the following key fields:
 
-| Field | Description |
-| --- | --- |
-| `id` | Server-generated UUID. |
-| `amount` | Positive integer expressed in the currency's minor unit. |
-| `currency` | Three-letter uppercase currency code. |
-| `reference` | Optional client business reference. |
-| `status` | `pending`, `processing`, `succeeded`, or `failed`. |
-| `attemptCount` | Number of processing attempts started. |
-| `failureCode` | Non-sensitive terminal failure category, when applicable. |
-| `createdAt` | UTC ISO-8601 creation timestamp. |
-| `updatedAt` | UTC ISO-8601 last-update timestamp. |
-| `version` | Monotonic value used to reject stale concurrent updates. |
+| Field          | Description                                               |
+| -------------- | --------------------------------------------------------- |
+| `id`           | Server-generated UUID.                                    |
+| `amount`       | Positive integer expressed in the currency's minor unit.  |
+| `currency`     | Three-letter uppercase currency code.                     |
+| `reference`    | Optional client business reference.                       |
+| `status`       | `pending`, `processing`, `succeeded`, or `failed`.        |
+| `attemptCount` | Number of processing attempts started.                    |
+| `failureCode`  | Non-sensitive terminal failure category, when applicable. |
+| `createdAt`    | UTC ISO-8601 creation timestamp.                          |
+| `updatedAt`    | UTC ISO-8601 last-update timestamp.                       |
+| `version`      | Monotonic value used to reject stale concurrent updates.  |
 
 ### Amount units
 
@@ -238,9 +244,9 @@ The caller supplies the last version it read. If another request or the backgrou
 
 ### Health checks
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /health/live` | Confirms that the process is running. |
+| Endpoint            | Purpose                                                      |
+| ------------------- | ------------------------------------------------------------ |
+| `GET /health/live`  | Confirms that the process is running.                        |
 | `GET /health/ready` | Confirms that storage is initialized and processing can run. |
 
 Health checks are not rate-limited and expose no configuration or diagnostic secrets.
@@ -315,10 +321,10 @@ The planned implementation includes:
 
 Proposed rate-limit defaults:
 
-| Scope | Limit |
-| --- | --- |
-| General API traffic | 100 requests per 15 minutes per client IP |
-| `POST /payments` and `PATCH /payments/{id}/status` | 20 requests per minute per client IP |
+| Scope                                              | Limit                                     |
+| -------------------------------------------------- | ----------------------------------------- |
+| General API traffic                                | 100 requests per 15 minutes per client IP |
+| `POST /payments` and `PATCH /payments/{id}/status` | 20 requests per minute per client IP      |
 
 Exceeded limits return `429 Too Many Requests` using the standard error envelope and standard `RateLimit` headers. Proxy trust is disabled unless the known deployment proxy count is configured explicitly.
 
@@ -377,4 +383,3 @@ A production evolution would replace JSON persistence with a transactional datab
 
 - [Architecture](./ARCHITECTURE.md) — detailed decisions, rationale, contracts, failure behavior, and tradeoffs.
 - [Implementation tasks](./TASKS.md) — sequential milestones, acceptance criteria, and suggested commits.
-
