@@ -1,5 +1,6 @@
 import express, { type Express } from 'express';
 import helmet from 'helmet';
+import { createDocumentationRouter } from './infrastructure/documentation/documentation.routes.js';
 import { createLogger } from './infrastructure/logging/logger.js';
 import { createRequestLoggingMiddleware } from './middleware/request-logging.js';
 
@@ -31,7 +32,7 @@ export function createApp(dependencies: AppDependencies): Express {
   app.use(createRequestLoggingMiddleware(logger));
   app.use(helmet());
 
-  app.get('/health/live', (_request, response) => {
+  app.get(['/health', '/health/live'], (_request, response) => {
     response.status(200).json({ status: 'ok' });
   });
   app.get('/health/ready', (_request, response, next) => {
@@ -45,6 +46,7 @@ export function createApp(dependencies: AppDependencies): Express {
 
   app.use(express.json({ limit: '16kb', strict: true }));
   app.use(createGeneralRateLimiter(dependencies.config.rateLimit));
+  app.use(createDocumentationRouter());
   app.use(
     '/payments',
     createAuthenticationMiddleware(dependencies.config.apiKey),
