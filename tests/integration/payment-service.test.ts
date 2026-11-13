@@ -1,17 +1,18 @@
+import { createTestPaymentRepository } from '../helpers/create-test-payment-repository.js';
 import { ZodError } from 'zod';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { InMemoryPaymentRepository } from '../../../../src/modules/payments/repositories/in-memory-payment.repository.js';
+import type { JsonPaymentRepository } from '../../src/modules/payments/repositories/json-payment.repository.js';
 import {
   InvalidPaymentTransitionError,
   PaymentIdempotencyConflictError,
   PaymentNotFoundError,
   PaymentVersionConflictError,
-} from '../../../../src/modules/payments/payment.errors.js';
-import type { UpdatePaymentStatusCommand } from '../../../../src/modules/payments/payment-service.types.js';
-import { PaymentService } from '../../../../src/modules/payments/payment.service.js';
-import type { Clock } from '../../../../src/shared/types/clock.types.js';
-import type { IdGenerator } from '../../../../src/shared/types/id-generator.types.js';
+} from '../../src/modules/payments/payment.errors.js';
+import type { UpdatePaymentStatusCommand } from '../../src/modules/payments/payment-service.types.js';
+import { PaymentService } from '../../src/modules/payments/payment.service.js';
+import type { Clock } from '../../src/shared/types/clock.types.js';
+import type { IdGenerator } from '../../src/shared/types/id-generator.types.js';
 
 const firstPaymentId = '7ccf50b4-1c73-44c9-97ae-c0fd218d18ec';
 const secondPaymentId = '1351bb54-e5f2-42ee-8ef0-d2cc31b61cf8';
@@ -19,7 +20,7 @@ const secondPaymentId = '1351bb54-e5f2-42ee-8ef0-d2cc31b61cf8';
 describe('PaymentService', () => {
   let currentTime: Date;
   let generatedIdIndex: number;
-  let repository: InMemoryPaymentRepository;
+  let repository: JsonPaymentRepository;
   let service: PaymentService;
 
   beforeEach(async () => {
@@ -30,8 +31,7 @@ describe('PaymentService', () => {
     const idGenerator: IdGenerator = {
       generate: () => ids[generatedIdIndex++] ?? secondPaymentId,
     };
-    repository = new InMemoryPaymentRepository();
-    await repository.initialize();
+    repository = await createTestPaymentRepository();
     service = new PaymentService(repository, clock, idGenerator);
   });
 

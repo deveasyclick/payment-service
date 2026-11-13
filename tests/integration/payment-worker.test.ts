@@ -1,18 +1,19 @@
+import { createTestPaymentRepository } from '../helpers/create-test-payment-repository.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   PaymentGateway,
   PaymentGatewayResult,
-} from '../../../../src/modules/payments/payment-gateway.types.js';
-import { PaymentWorker } from '../../../../src/modules/payments/payment.worker.js';
-import { InMemoryPaymentRepository } from '../../../../src/modules/payments/repositories/in-memory-payment.repository.js';
-import type { Clock } from '../../../../src/shared/types/clock.types.js';
+} from '../../src/modules/payments/payment-gateway.types.js';
+import { PaymentWorker } from '../../src/modules/payments/payment.worker.js';
+import type { JsonPaymentRepository } from '../../src/modules/payments/repositories/json-payment.repository.js';
+import type { Clock } from '../../src/shared/types/clock.types.js';
 import {
   buildIdempotencyRecord,
   buildPayment,
-} from '../../../helpers/payment-fixtures.js';
-import { ScriptedPaymentGateway } from '../../../helpers/scripted-payment-gateway.js';
-import { captureLogs } from '../../../helpers/capture-logs.js';
+} from '../helpers/payment-fixtures.js';
+import { ScriptedPaymentGateway } from '../helpers/scripted-payment-gateway.js';
+import { captureLogs } from '../helpers/capture-logs.js';
 
 const defaultWorkerOptions = {
   attemptTimeoutMs: 1_000,
@@ -23,9 +24,8 @@ const defaultWorkerOptions = {
   shutdownTimeoutMs: 500,
 } as const;
 
-async function createSeededRepository(): Promise<InMemoryPaymentRepository> {
-  const repository = new InMemoryPaymentRepository();
-  await repository.initialize();
+async function createSeededRepository(): Promise<JsonPaymentRepository> {
+  const repository = await createTestPaymentRepository();
   await repository.createPayment(buildPayment(), buildIdempotencyRecord());
   return repository;
 }
@@ -194,8 +194,12 @@ describe('PaymentWorker', () => {
   it('times out a provider that never settles', async () => {
     vi.useFakeTimers();
     const repository = await createSeededRepository();
+    const enteredGateway = Promise.withResolvers<void>();
     const gateway: PaymentGateway = {
-      processPayment: () => new Promise<PaymentGatewayResult>(() => undefined),
+      processPayment: () => {
+        enteredGateway.resolve();
+        return new Promise<PaymentGatewayResult>(() => undefined);
+      },
     };
     const worker = new PaymentWorker(
       repository,
@@ -205,6 +209,7 @@ describe('PaymentWorker', () => {
     );
 
     const processing = worker.processNextPayment();
+    await enteredGateway.promise;
     await vi.advanceTimersByTimeAsync(100);
     await processing;
 
@@ -316,7 +321,13 @@ describe('PaymentWorker', () => {
   it('polls without overlapping and can be stopped', async () => {
     vi.useFakeTimers();
     const repository = await createSeededRepository();
-    const gateway = new ScriptedPaymentGateway([{ kind: 'succeeded' }]);
+    const enteredGateway = Promise.withResolvers<void>();
+    const gateway = new ScriptedPaymentGateway([
+      () => {
+        enteredGateway.resolve();
+        return { kind: 'succeeded' };
+      },
+    ]);
     const worker = new PaymentWorker(
       repository,
       gateway,
@@ -326,6 +337,7 @@ describe('PaymentWorker', () => {
 
     worker.start();
     await vi.advanceTimersByTimeAsync(0);
+    await enteredGateway.promise;
     await worker.stop();
 
     await expect(
@@ -338,9 +350,11 @@ describe('PaymentWorker', () => {
     vi.useFakeTimers();
     const repository = await createSeededRepository();
     let attemptSignal: AbortSignal | undefined;
+    const enteredGateway = Promise.withResolvers<void>();
     const gateway: PaymentGateway = {
       processPayment: (_payment, context) => {
         attemptSignal = context.signal;
+        enteredGateway.resolve();
         return new Promise<PaymentGatewayResult>((_resolve, reject) => {
           context.signal.addEventListener('abort', () => {
             reject(new Error('gateway attempt aborted'));
@@ -356,6 +370,7 @@ describe('PaymentWorker', () => {
     );
     worker.start();
     await vi.advanceTimersByTimeAsync(0);
+    await enteredGateway.promise;
 
     const stopping = worker.stop();
     await vi.advanceTimersByTimeAsync(100);
@@ -394,8 +409,12 @@ describe('PaymentWorker', () => {
   it('stops a non-cooperative gateway without writing a retry after shutdown', async () => {
     vi.useFakeTimers();
     const repository = await createSeededRepository();
+    const enteredGateway = Promise.withResolvers<void>();
     const gateway = new ScriptedPaymentGateway([
-      () => new Promise<PaymentGatewayResult>(() => undefined),
+      () => {
+        enteredGateway.resolve();
+        return new Promise<PaymentGatewayResult>(() => undefined);
+      },
     ]);
     const worker = new PaymentWorker(
       repository,
@@ -405,6 +424,7 @@ describe('PaymentWorker', () => {
     );
     worker.start();
     await vi.advanceTimersByTimeAsync(0);
+    await enteredGateway.promise;
     const stopping = worker.stop();
     await vi.advanceTimersByTimeAsync(100);
     await expect(stopping).resolves.toBe(false);
@@ -425,8 +445,10 @@ describe('PaymentWorker', () => {
     const repository = await createSeededRepository();
     const originalClaim = repository.claimNextDuePayment.bind(repository);
     const releaseClaim = Promise.withResolvers<void>();
+    const enteredClaim = Promise.withResolvers<void>();
     vi.spyOn(repository, 'claimNextDuePayment').mockImplementation(
       async (now) => {
+        enteredClaim.resolve();
         await releaseClaim.promise;
         return originalClaim(now);
       },
@@ -440,6 +462,7 @@ describe('PaymentWorker', () => {
     );
     worker.start();
     await vi.advanceTimersByTimeAsync(0);
+    await enteredClaim.promise;
     const stopping = worker.stop();
     releaseClaim.resolve();
     await expect(stopping).resolves.toBe(true);
@@ -454,9 +477,15 @@ describe('PaymentWorker', () => {
     vi.spyOn(repository, 'claimNextDuePayment').mockRejectedValueOnce(
       new Error('storage-secret'),
     );
+    const enteredGateway = Promise.withResolvers<void>();
     const worker = new PaymentWorker(
       repository,
-      new ScriptedPaymentGateway([{ kind: 'succeeded' }]),
+      new ScriptedPaymentGateway([
+        () => {
+          enteredGateway.resolve();
+          return { kind: 'succeeded' };
+        },
+      ]),
       { now: () => new Date('2026-11-13T12:01:00.000Z') },
       defaultWorkerOptions,
       () => 0,
@@ -464,6 +493,7 @@ describe('PaymentWorker', () => {
     );
     worker.start();
     await vi.advanceTimersByTimeAsync(defaultWorkerOptions.pollIntervalMs);
+    await enteredGateway.promise;
     await worker.stop();
     const failures = logs
       .entries()

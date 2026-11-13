@@ -7,10 +7,10 @@ import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/index.js';
 import type { PaymentUseCases } from '../../src/modules/payments/payment-service.types.js';
 import { PaymentService } from '../../src/modules/payments/payment.service.js';
-import { InMemoryPaymentRepository } from '../../src/modules/payments/repositories/in-memory-payment.repository.js';
 import type { Clock } from '../../src/shared/types/clock.types.js';
 import type { IdGenerator } from '../../src/shared/types/id-generator.types.js';
 import { captureLogs } from '../helpers/capture-logs.js';
+import { createTestPaymentRepository } from '../helpers/create-test-payment-repository.js';
 
 const apiKey = 'test-api-key-1234';
 const firstPaymentId = '7ccf50b4-1c73-44c9-97ae-c0fd218d18ec';
@@ -26,8 +26,7 @@ interface TestAppOptions {
 }
 
 async function createTestApp(options: TestAppOptions = {}): Promise<Express> {
-  const repository = new InMemoryPaymentRepository();
-  await repository.initialize();
+  const repository = await createTestPaymentRepository();
   const clock: Clock = {
     now: () => new Date('2026-11-13T12:00:00.000Z'),
   };

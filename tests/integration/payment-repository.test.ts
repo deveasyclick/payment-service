@@ -1,19 +1,19 @@
+import { createTestPaymentRepository } from '../helpers/create-test-payment-repository.js';
 import { describe, expect, it } from 'vitest';
 
-import { InMemoryPaymentRepository } from '../../../../src/modules/payments/repositories/in-memory-payment.repository.js';
-import { PaymentStorageState } from '../../../../src/infrastructure/storage/payment-storage-state.js';
+import { PaymentStorageState } from '../../src/infrastructure/storage/payment-storage-state.js';
 import {
   InvalidPaymentVersionError,
   RepositoryNotInitializedError,
-} from '../../../../src/modules/payments/payment-repository.errors.js';
+} from '../../src/modules/payments/payment-repository.errors.js';
 import {
   buildIdempotencyRecord,
   buildPayment,
-} from '../../../helpers/payment-fixtures.js';
+} from '../helpers/payment-fixtures.js';
 
-describe('InMemoryPaymentRepository', () => {
+describe('JsonPaymentRepository', () => {
   it('rejects access before initialization', async () => {
-    const repository = new InMemoryPaymentRepository();
+    const repository = await createTestPaymentRepository({ initialize: false });
 
     await expect(repository.findPaymentById('missing')).rejects.toBeInstanceOf(
       RepositoryNotInitializedError,
@@ -21,8 +21,7 @@ describe('InMemoryPaymentRepository', () => {
   });
 
   it('atomically creates a payment with its idempotency record', async () => {
-    const repository = new InMemoryPaymentRepository();
-    await repository.initialize();
+    const repository = await createTestPaymentRepository();
     const payment = buildPayment();
     const record = buildIdempotencyRecord();
 
@@ -39,8 +38,7 @@ describe('InMemoryPaymentRepository', () => {
   });
 
   it('replays the same idempotent request and conflicts on a different hash', async () => {
-    const repository = new InMemoryPaymentRepository();
-    await repository.initialize();
+    const repository = await createTestPaymentRepository();
     const payment = buildPayment();
     const record = buildIdempotencyRecord();
     await repository.createPayment(payment, record);
@@ -61,8 +59,7 @@ describe('InMemoryPaymentRepository', () => {
   });
 
   it('allows only one concurrent update for an expected version', async () => {
-    const repository = new InMemoryPaymentRepository();
-    await repository.initialize();
+    const repository = await createTestPaymentRepository();
     const payment = buildPayment();
     await repository.createPayment(payment, buildIdempotencyRecord());
     const processingPayment = buildPayment({
@@ -94,8 +91,7 @@ describe('InMemoryPaymentRepository', () => {
   });
 
   it('rejects a candidate that does not increment the expected version', async () => {
-    const repository = new InMemoryPaymentRepository();
-    await repository.initialize();
+    const repository = await createTestPaymentRepository();
     const payment = buildPayment();
     await repository.createPayment(payment, buildIdempotencyRecord());
 
@@ -108,8 +104,7 @@ describe('InMemoryPaymentRepository', () => {
   });
 
   it('claims only the oldest due pending payment', async () => {
-    const repository = new InMemoryPaymentRepository();
-    await repository.initialize();
+    const repository = await createTestPaymentRepository();
     const first = buildPayment({
       id: '1351bb54-e5f2-42ee-8ef0-d2cc31b61cf8',
       createdAt: '2026-11-13T11:00:00.000Z',
@@ -165,15 +160,16 @@ describe('InMemoryPaymentRepository', () => {
       id: '8cae7d58-8a6e-4297-bdd4-3c6140bcc98c',
     });
     const emptyDocument = new PaymentStorageState().toDocument();
-    const repository = new InMemoryPaymentRepository({
-      ...emptyDocument,
-      payments: {
-        [expired.id]: expired,
-        [active.id]: active,
-        [pending.id]: pending,
+    const repository = await createTestPaymentRepository({
+      initialDocument: {
+        ...emptyDocument,
+        payments: {
+          [expired.id]: expired,
+          [active.id]: active,
+          [pending.id]: pending,
+        },
       },
     });
-    await repository.initialize();
 
     await expect(
       repository.recoverExpiredPayments(
