@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, the secured Express API, and asynchronous payment processing are complete. Restart recovery and the listening server lifecycle have not been implemented yet.
+> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, the secured Express API, asynchronous processing, restart recovery, and graceful server lifecycle are complete. Correlated/redacted request logging and the OpenAPI contract remain to be implemented.
 
 ## What this project demonstrates
 
@@ -62,6 +62,8 @@ The available quality commands are:
 payment-service/
 ├── src/
 │   ├── app.ts
+│   ├── server-lifecycle.ts
+│   ├── server-lifecycle.types.ts
 │   ├── server.ts
 │   ├── config/
 │   │   ├── config.const.ts
@@ -136,6 +138,7 @@ payment-service/
 │   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
+│   │   ├── server-lifecycle.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
@@ -324,6 +327,12 @@ The in-process worker:
 Processing has **at-least-once** semantics. If the process stops after the provider accepts a payment but before local success is saved, the attempt can run again. The payment ID is therefore reused as the downstream idempotency key.
 
 On startup, pending work remains eligible and expired `processing` leases are requeued. A late worker result cannot overwrite a newer operator update because completion is conditional on the version and state originally claimed.
+
+The worker starts automatically with the API through `pnpm dev` or `pnpm start` (after `pnpm build`). Both share one repository instance and one mutation queue. Running the worker in a separate process against the same JSON file is unsupported: each process would hold its own cached snapshot and write queue, so the worker would not see newly created payments and either process could overwrite the other's changes. Atomic file replacement prevents partial files; it does not coordinate concurrent processes, and payment version checks apply only to each process's local snapshot.
+
+This keeps setup small for the assessment. A separate worker process would require shared transactional storage with atomic job claims and version checks, such as SQLite or PostgreSQL, before adding an independent worker entry point. Do not run multiple service instances against the same JSON file.
+
+The service reports ready only after storage validation, lease recovery, worker startup, and HTTP listening succeed. `SIGTERM` and `SIGINT` immediately make it unready, stop new HTTP connections and worker claims, then allow active work a configurable bounded shutdown period before aborting it.
 
 ## Persistence
 
