@@ -41,6 +41,92 @@ The application will be separated into small layers:
 
 **Why:** these boundaries keep Express and file I/O out of domain logic, make failure behavior unit-testable, and allow the JSON repository or simulator to be replaced without redesigning the service. A message broker, ORM, and dependency-injection framework would add more setup than value at this scale, so they are deliberately excluded.
 
+### Source layout
+
+```text
+payment-service/
+├── src/
+│   ├── app.ts
+│   ├── server.ts
+│   ├── config.ts
+│   ├── modules/
+│   │   └── payments/
+│   │       ├── payment.types.ts
+│   │       ├── payment.schemas.ts
+│   │       ├── payment.state-machine.ts
+│   │       ├── payment.service.ts
+│   │       ├── payment.repository.ts
+│   │       ├── payment.gateway.ts
+│   │       ├── payment.worker.ts
+│   │       └── payment.routes.ts
+│   ├── infrastructure/
+│   │   ├── persistence/
+│   │   │   ├── json-payment.repository.ts
+│   │   │   └── storage.schemas.ts
+│   │   ├── gateway/
+│   │   │   └── simulated-payment.gateway.ts
+│   │   └── logging/
+│   │       └── logger.ts
+│   ├── middleware/
+│   │   ├── authenticate.ts
+│   │   ├── error-handler.ts
+│   │   ├── rate-limit.ts
+│   │   ├── request-id.ts
+│   │   └── validate.ts
+│   └── shared/
+│       ├── errors/
+│       │   └── application-error.ts
+│       ├── helpers/
+│       │   ├── clock.ts
+│       │   └── id-generator.ts
+│       └── types/
+│           └── shared.types.ts
+├── tests/
+│   ├── unit/
+│   │   └── modules/
+│   │       └── payments/
+│   │           ├── payment-state-machine.test.ts
+│   │           └── payment-service.test.ts
+│   ├── integration/
+│   │   ├── payments-api.test.ts
+│   │   ├── payment-worker.test.ts
+│   │   └── json-payment-repository.test.ts
+│   └── helpers/
+│       ├── create-test-app.ts
+│       ├── scripted-payment-gateway.ts
+│       └── test-clock.ts
+├── openapi.yaml
+├── .env.example
+├── .gitignore
+├── package.json
+├── tsconfig.json
+├── vitest.config.ts
+├── ARCHITECTURE.md
+├── TASKS.md
+└── README.md
+```
+
+Responsibilities and dependency rules:
+
+- `app.ts` creates the Express application without opening a port; `server.ts` wires concrete dependencies and owns the process lifecycle.
+- `modules/payments` owns payment-specific types, schemas, state rules, use cases, ports, worker orchestration, and routes.
+- `infrastructure` contains concrete adapters for filesystem persistence, the simulated gateway, and Pino. Domain rules do not import these implementations.
+- `middleware` contains cross-cutting Express behavior rather than payment business logic.
+- `shared` contains only reusable cross-module concerns. Every file is grouped by purpose: errors, helpers, or types. Payment-specific types remain inside the payment module, and `shared.types.ts` is created only if a genuine shared type emerges.
+- Tests are separated by scope. Unit tests mirror the payment module; integration tests cover API, persistence, and worker boundaries; test doubles stay under `tests/helpers`.
+- The runtime JSON data directory is not part of the committed source tree. The repository creates the parent directory for the configured path (for example, `./data/payments.json`), and generated data is ignored by Git.
+
+The intended dependency direction is:
+
+```text
+routes -> payment service -> repository/gateway interfaces
+                                  ^
+                                  |
+                    infrastructure implementations
+```
+
+**Why:** a module-first layout keeps the only business capability cohesive while leaving room for future modules. Interfaces stay near the payment use cases that consume them, concrete adapters remain replaceable, and the structure avoids unnecessary controller/DTO/mapper layers for three endpoints.
+
 ## 3. Domain model
 
 ### Payment
