@@ -15,13 +15,14 @@ describe('loadConfig', () => {
       mutationRateLimit: { max: 20, windowMs: 60_000 },
       port: 3_000,
       rateLimit: { max: 100, windowMs: 900_000 },
-      simulatedGateway: { latencyMs: 500 },
+      simulatedGateway: { latencyMs: 500, outcome: 'succeeded' },
       trustedProxyHops: 0,
       worker: {
         attemptTimeoutMs: 5_000,
         leaseMs: 30_000,
         maxAttempts: 3,
         pollIntervalMs: 250,
+        retryBaseDelayMs: 250,
       },
     });
   });

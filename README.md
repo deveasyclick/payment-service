@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, and the secured Express API are complete. Background processing and the listening server lifecycle have not been implemented yet.
+> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, the secured Express API, and asynchronous payment processing are complete. Restart recovery and the listening server lifecycle have not been implemented yet.
 
 ## What this project demonstrates
 
@@ -86,7 +86,9 @@ payment-service/
 │   │       ├── repositories/
 │   │       │   ├── in-memory-payment.repository.ts
 │   │       │   └── json-payment.repository.ts
-│   │       ├── payment.gateway.ts
+│   │       ├── payment-gateway.types.ts
+│   │       ├── payment-worker.errors.ts
+│   │       ├── payment-worker.types.ts
 │   │       ├── payment.worker.ts
 │   │       └── payment.routes.ts
 │   ├── infrastructure/
@@ -128,13 +130,15 @@ payment-service/
 │   │   │       ├── payment-idempotency.test.ts
 │   │   │       ├── payment-mapper.test.ts
 │   │   │       ├── payment-state-machine.test.ts
-│   │   │       └── payment-service.test.ts
+│   │   │       ├── payment-service.test.ts
+│   │   │       └── payment-worker.test.ts
+│   │   ├── infrastructure/
+│   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
-│   │   ├── payment-worker.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
 │       ├── create-test-app.ts
@@ -309,7 +313,7 @@ Expected errors have stable machine-readable codes. Unexpected failures return a
 
 Creating a payment only persists and queues it. The HTTP request does not wait for the simulated provider.
 
-The in-process worker will:
+The in-process worker:
 
 1. Poll for due `pending` payments.
 2. Atomically claim one as `processing`.

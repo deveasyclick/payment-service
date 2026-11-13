@@ -9,9 +9,11 @@ export const CONFIG_DEFAULTS = {
   rateLimitMax: 100,
   rateLimitWindowMs: 900_000,
   simulatedGatewayLatencyMs: 500,
+  simulatedGatewayOutcome: 'succeeded',
   trustedProxyHops: 0,
   workerAttemptTimeoutMs: 5_000,
   workerLeaseMs: 30_000,
   workerMaxAttempts: 3,
   workerPollIntervalMs: 250,
+  workerRetryBaseDelayMs: 250,
 } as const;

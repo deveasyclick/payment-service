@@ -71,7 +71,9 @@ payment-service/
 │   │       ├── repositories/
 │   │       │   ├── in-memory-payment.repository.ts
 │   │       │   └── json-payment.repository.ts
-│   │       ├── payment.gateway.ts
+│   │       ├── payment-gateway.types.ts
+│   │       ├── payment-worker.errors.ts
+│   │       ├── payment-worker.types.ts
 │   │       ├── payment.worker.ts
 │   │       └── payment.routes.ts
 │   ├── infrastructure/
@@ -113,13 +115,15 @@ payment-service/
 │   │   │       ├── payment-idempotency.test.ts
 │   │   │       ├── payment-mapper.test.ts
 │   │   │       ├── payment-state-machine.test.ts
-│   │   │       └── payment-service.test.ts
+│   │   │       ├── payment-service.test.ts
+│   │   │       └── payment-worker.test.ts
+│   │   ├── infrastructure/
+│   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
-│   │   ├── payment-worker.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
 │       ├── create-test-app.ts

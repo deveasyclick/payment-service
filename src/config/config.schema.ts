@@ -73,10 +73,17 @@ const environmentSchema = z
       CONFIG_DEFAULTS.workerMaxAttempts,
       { min: 1, max: 10 },
     ),
+    WORKER_RETRY_BASE_DELAY_MS: integerFromEnvironment(
+      CONFIG_DEFAULTS.workerRetryBaseDelayMs,
+      { min: 10, max: 300_000 },
+    ),
     SIMULATED_GATEWAY_LATENCY_MS: integerFromEnvironment(
       CONFIG_DEFAULTS.simulatedGatewayLatencyMs,
       { min: 0, max: 300_000 },
     ),
+    SIMULATED_GATEWAY_OUTCOME: z
+      .enum(['succeeded', 'declined', 'transient_failure'])
+      .default(CONFIG_DEFAULTS.simulatedGatewayOutcome),
   })
   .superRefine((value, context) => {
     if (value.NODE_ENV === 'production' && value.API_KEY === undefined) {
@@ -111,6 +118,7 @@ const environmentSchema = z
     },
     simulatedGateway: {
       latencyMs: value.SIMULATED_GATEWAY_LATENCY_MS,
+      outcome: value.SIMULATED_GATEWAY_OUTCOME,
     },
     trustedProxyHops: value.TRUST_PROXY_HOPS,
     worker: {
@@ -118,6 +126,7 @@ const environmentSchema = z
       leaseMs: value.WORKER_LEASE_MS,
       maxAttempts: value.WORKER_MAX_ATTEMPTS,
       pollIntervalMs: value.WORKER_POLL_INTERVAL_MS,
+      retryBaseDelayMs: value.WORKER_RETRY_BASE_DELAY_MS,
     },
   }));
 

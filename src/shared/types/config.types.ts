@@ -19,7 +19,13 @@ export interface WorkerConfig {
   readonly leaseMs: number;
   readonly maxAttempts: number;
   readonly pollIntervalMs: number;
+  readonly retryBaseDelayMs: number;
 }
+
+export type SimulatedGatewayOutcome =
+  | 'succeeded'
+  | 'declined'
+  | 'transient_failure';
 
 export interface AppConfig {
   readonly apiKey: string | undefined;
@@ -31,6 +37,7 @@ export interface AppConfig {
   readonly rateLimit: RateLimitConfig;
   readonly simulatedGateway: {
     readonly latencyMs: number;
+    readonly outcome: SimulatedGatewayOutcome;
   };
   readonly trustedProxyHops: number;
   readonly worker: WorkerConfig;
