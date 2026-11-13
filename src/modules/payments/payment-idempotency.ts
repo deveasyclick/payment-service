@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import type {
   CreatePaymentCommand,
   NormalizedCreatePaymentRequest,
-} from './payment-service.types.js';
+} from './types/payment-service.types.js';
 
 export function normalizeCreatePaymentRequest(
   command: CreatePaymentCommand,

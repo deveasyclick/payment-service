@@ -1,7 +1,7 @@
 import type {
   IdempotencyRecord,
   Payment,
-} from '../../modules/payments/payment.types.js';
+} from '../../modules/payments/types/payment.types.js';
 import type { STORAGE_SCHEMA_VERSION } from './storage.const.js';
 import type { ServiceLogger } from '../../shared/types/logger.types.js';
 

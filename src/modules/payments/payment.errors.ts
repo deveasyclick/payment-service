@@ -1,4 +1,4 @@
-import type { PaymentTransition } from './payment.types.js';
+import type { PaymentTransition } from './types/payment.types.js';
 
 export class InvalidPaymentTransitionError extends Error {
   override readonly name = 'InvalidPaymentTransitionError';
@@ -37,5 +37,43 @@ export class PaymentVersionConflictError extends Error {
     super(
       `Payment ${paymentId} has version ${currentVersion}; expected ${expectedVersion}`,
     );
+  }
+}
+
+export class RepositoryNotInitializedError extends Error {
+  override readonly name = 'RepositoryNotInitializedError';
+
+  constructor() {
+    super('Payment repository has not been initialized');
+  }
+}
+
+export class RepositoryInvariantError extends Error {
+  override readonly name = 'RepositoryInvariantError';
+}
+
+export class InvalidPaymentVersionError extends Error {
+  override readonly name = 'InvalidPaymentVersionError';
+
+  constructor(expectedVersion: number, actualVersion: number) {
+    super(
+      `Updated payment version must be ${expectedVersion + 1}; received ${actualVersion}`,
+    );
+  }
+}
+
+export class GatewayAttemptTimeoutError extends Error {
+  override readonly name = 'GatewayAttemptTimeoutError';
+
+  constructor(readonly timeoutMs: number) {
+    super(`Payment gateway attempt exceeded ${timeoutMs}ms`);
+  }
+}
+
+export class GatewayAttemptAbortedError extends Error {
+  override readonly name = 'GatewayAttemptAbortedError';
+
+  constructor() {
+    super('Payment gateway attempt aborted during shutdown');
   }
 }

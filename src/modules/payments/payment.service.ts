@@ -1,4 +1,4 @@
-import type { PaymentRepository } from './payment-repository.types.js';
+import type { PaymentRepository } from './types/payment-repository.types.js';
 import {
   PaymentIdempotencyConflictError,
   PaymentNotFoundError,
@@ -18,9 +18,9 @@ import type {
   CreatePaymentOutcome,
   PaymentUseCases,
   UpdatePaymentStatusCommand,
-} from './payment-service.types.js';
+} from './types/payment-service.types.js';
 import { assertPaymentTransitionAllowed } from './payment.state-machine.js';
-import type { Payment, PublicPayment } from './payment.types.js';
+import type { Payment, PublicPayment } from './types/payment.types.js';
 import type { Clock } from '../../shared/types/clock.types.js';
 import type { IdGenerator } from '../../shared/types/id-generator.types.js';
 

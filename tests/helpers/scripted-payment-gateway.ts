@@ -2,8 +2,8 @@ import type {
   PaymentGateway,
   PaymentGatewayContext,
   PaymentGatewayResult,
-} from '../../src/modules/payments/payment-gateway.types.js';
-import type { Payment } from '../../src/modules/payments/payment.types.js';
+} from '../../src/modules/payments/types/payment-gateway.types.js';
+import type { Payment } from '../../src/modules/payments/types/payment.types.js';
 
 type GatewayStep =
   | PaymentGatewayResult

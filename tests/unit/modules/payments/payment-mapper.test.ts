@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { toPublicPayment } from '../../../../src/modules/payments/payment.mapper.js';
-import type { Payment } from '../../../../src/modules/payments/payment.types.js';
+import type { Payment } from '../../../../src/modules/payments/types/payment.types.js';
 
 describe('toPublicPayment', () => {
   it('exposes public fields and removes worker scheduling details', () => {

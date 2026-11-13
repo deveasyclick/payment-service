@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   PaymentGateway,
   PaymentGatewayResult,
-} from '../../src/modules/payments/payment-gateway.types.js';
+} from '../../src/modules/payments/types/payment-gateway.types.js';
 import { PaymentWorker } from '../../src/modules/payments/payment.worker.js';
 import type { JsonPaymentRepository } from '../../src/modules/payments/repositories/json-payment.repository.js';
 import type { Clock } from '../../src/shared/types/clock.types.js';

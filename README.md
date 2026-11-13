@@ -2,7 +2,6 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-
 ## Table of contents
 
 - [What this project demonstrates](#what-this-project-demonstrates)
@@ -228,23 +227,22 @@ payment-service/
 │   │       ├── payment.const.ts
 │   │       ├── payment.controller.ts
 │   │       ├── payment.errors.ts
-│   │       ├── payment-http.types.ts
 │   │       ├── payment-idempotency.ts
-│   │       ├── payment.types.ts
 │   │       ├── payment.schemas.ts
 │   │       ├── payment.state-machine.ts
 │   │       ├── payment.mapper.ts
 │   │       ├── payment.service.ts
-│   │       ├── payment-service.types.ts
-│   │       ├── payment-repository.errors.ts
-│   │       ├── payment-repository.types.ts
+│   │       ├── payment.worker.ts
+│   │       ├── payment.routes.ts
 │   │       ├── repositories/
 │   │       │   └── json-payment.repository.ts
-│   │       ├── payment-gateway.types.ts
-│   │       ├── payment-worker.errors.ts
-│   │       ├── payment-worker.types.ts
-│   │       ├── payment.worker.ts
-│   │       └── payment.routes.ts
+│   │       └── types/
+│   │           ├── payment-gateway.types.ts
+│   │           ├── payment-http.types.ts
+│   │           ├── payment-repository.types.ts
+│   │           ├── payment-service.types.ts
+│   │           ├── payment-worker.types.ts
+│   │           └── payment.types.ts
 │   ├── infrastructure/
 │   │   ├── documentation/
 │   │   │   ├── documentation.const.ts
@@ -334,7 +332,7 @@ payment-service/
 
 The `PaymentServer` class in `server.ts` owns readiness, ordered startup, worker lifecycle, signal handling, and bounded HTTP shutdown. Its injected dependency types live in `server.types.ts`. Importing the class does not start the service or initialize storage; `main.ts` performs startup. `pnpm dev` runs `src/main.ts`, and `pnpm start` runs `dist/main.js` after a build.
 
-Payment-specific behavior and its repository implementations stay in `modules/payments`. File-database mechanics, storage schemas, and atomic writing stay under `infrastructure/storage`, mirroring the separation between database infrastructure and feature repositories in a database-backed service. Other cross-module adapters, such as the simulated provider and Pino configuration, also stay under `infrastructure`. Cross-cutting Express functions live under `middleware`.
+Payment-specific behavior and its repository implementation stay in `modules/payments`. All payment error classes are grouped in `payment.errors.ts`, and all payment type files live in `modules/payments/types/`. File-database mechanics, storage schemas, and atomic writing stay under `infrastructure/storage`, mirroring the separation between database infrastructure and feature repositories in a database-backed service. Other cross-module adapters, such as the simulated provider and Pino configuration, also stay under `infrastructure`. Cross-cutting Express functions live under `middleware`.
 
 The runtime JSON directory is intentionally absent from the committed tree. The service creates the parent directory of the configured data-file path, such as `./data/payments.json`, and `.gitignore` excludes the generated data.
 

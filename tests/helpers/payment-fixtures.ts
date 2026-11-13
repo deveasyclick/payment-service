@@ -1,7 +1,7 @@
 import type {
   IdempotencyRecord,
   Payment,
-} from '../../src/modules/payments/payment.types.js';
+} from '../../src/modules/payments/types/payment.types.js';
 
 export function buildPayment(overrides: Partial<Payment> = {}): Payment {
   return {

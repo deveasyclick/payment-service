@@ -77,23 +77,22 @@ payment-service/
 │   │       ├── payment.const.ts
 │   │       ├── payment.controller.ts
 │   │       ├── payment.errors.ts
-│   │       ├── payment-http.types.ts
 │   │       ├── payment-idempotency.ts
-│   │       ├── payment.types.ts
 │   │       ├── payment.schemas.ts
 │   │       ├── payment.state-machine.ts
 │   │       ├── payment.mapper.ts
 │   │       ├── payment.service.ts
-│   │       ├── payment-service.types.ts
-│   │       ├── payment-repository.errors.ts
-│   │       ├── payment-repository.types.ts
+│   │       ├── payment.worker.ts
+│   │       ├── payment.routes.ts
 │   │       ├── repositories/
 │   │       │   └── json-payment.repository.ts
-│   │       ├── payment-gateway.types.ts
-│   │       ├── payment-worker.errors.ts
-│   │       ├── payment-worker.types.ts
-│   │       ├── payment.worker.ts
-│   │       └── payment.routes.ts
+│   │       └── types/
+│   │           ├── payment-gateway.types.ts
+│   │           ├── payment-http.types.ts
+│   │           ├── payment-repository.types.ts
+│   │           ├── payment-service.types.ts
+│   │           ├── payment-worker.types.ts
+│   │           └── payment.types.ts
 │   ├── infrastructure/
 │   │   ├── documentation/
 │   │   │   ├── documentation.const.ts
@@ -187,7 +186,7 @@ Responsibilities and dependency rules:
 - `infrastructure/storage` owns file-database mechanics, serialization schemas, the versioned storage document, and atomic file replacement. This mirrors the boundary between database infrastructure and feature repositories in a database-backed service.
 - Other `infrastructure` folders contain cross-module technical adapters such as the simulated gateway and Pino. Domain rules do not import these implementations.
 - `middleware` contains cross-cutting Express behavior rather than payment business logic.
-- `shared` contains only reusable cross-module concerns. Every file is grouped by purpose: errors, helpers, or types. Payment-specific types remain inside the payment module.
+- `shared` contains only reusable cross-module concerns. Every file is grouped by purpose: errors, helpers, or types. Payment-specific type files live in `modules/payments/types/`. Payment domain, repository, and gateway/worker error classes are consolidated in `modules/payments/payment.errors.ts`.
 - Tests are separated by scope. Unit tests mirror the payment module; integration tests cover API, persistence, and worker boundaries; test doubles stay under `tests/helpers`.
 - The runtime JSON data directory is not part of the committed source tree. The repository creates the parent directory for the configured path (for example, `./data/payments.json`), and generated data is ignored by Git.
 

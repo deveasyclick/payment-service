@@ -1,8 +1,8 @@
 import { Router, type RequestHandler } from 'express';
 
 import { PaymentController } from './payment.controller.js';
-import type { PaymentIdParams } from './payment-http.types.js';
-import type { PaymentUseCases } from './payment-service.types.js';
+import type { PaymentIdParams } from './types/payment-http.types.js';
+import type { PaymentUseCases } from './types/payment-service.types.js';
 
 export function createPaymentRouter(
   paymentService: PaymentUseCases,

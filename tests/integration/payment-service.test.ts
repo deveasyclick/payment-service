@@ -9,7 +9,7 @@ import {
   PaymentNotFoundError,
   PaymentVersionConflictError,
 } from '../../src/modules/payments/payment.errors.js';
-import type { UpdatePaymentStatusCommand } from '../../src/modules/payments/payment-service.types.js';
+import type { UpdatePaymentStatusCommand } from '../../src/modules/payments/types/payment-service.types.js';
 import { PaymentService } from '../../src/modules/payments/payment.service.js';
 import type { Clock } from '../../src/shared/types/clock.types.js';
 import type { IdGenerator } from '../../src/shared/types/id-generator.types.js';

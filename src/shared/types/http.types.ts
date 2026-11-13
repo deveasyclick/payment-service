@@ -1,6 +1,6 @@
 import type { AppConfig } from './config.types.js';
 import type { Logger } from 'pino';
-import type { PaymentUseCases } from '../../modules/payments/payment-service.types.js';
+import type { PaymentUseCases } from '../../modules/payments/types/payment-service.types.js';
 
 export interface AppDependencies {
   readonly logger?: Logger;

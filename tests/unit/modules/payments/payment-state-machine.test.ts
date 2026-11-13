@@ -13,7 +13,7 @@ import {
 import {
   type PaymentStatus,
   type PaymentTransitionActor,
-} from '../../../../src/modules/payments/payment.types.js';
+} from '../../../../src/modules/payments/types/payment.types.js';
 
 const allowed = new Set([
   'worker:pending->processing',

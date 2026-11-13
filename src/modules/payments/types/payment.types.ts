@@ -2,7 +2,7 @@ import {
   PAYMENT_FAILURE_CODES,
   PAYMENT_STATUSES,
   PAYMENT_TRANSITION_ACTORS,
-} from './payment.const.js';
+} from '../payment.const.js';
 
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 export type PaymentFailureCode = (typeof PAYMENT_FAILURE_CODES)[number];

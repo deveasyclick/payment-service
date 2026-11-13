@@ -3,7 +3,7 @@ import type {
   PaymentStatus,
   PaymentTransition,
   PaymentTransitionActor,
-} from './payment.types.js';
+} from './types/payment.types.js';
 
 const allowedTransitions: Readonly<
   Record<PaymentTransitionActor, ReadonlySet<string>>

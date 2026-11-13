@@ -1,4 +1,4 @@
-import type { Payment, PublicPayment } from './payment.types.js';
+import type { Payment, PublicPayment } from './types/payment.types.js';
 
 export function toPublicPayment(payment: Payment): PublicPayment {
   return {

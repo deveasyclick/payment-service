@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/index.js';
-import type { PaymentUseCases } from '../../src/modules/payments/payment-service.types.js';
+import type { PaymentUseCases } from '../../src/modules/payments/types/payment-service.types.js';
 import { PaymentService } from '../../src/modules/payments/payment.service.js';
 import type { Clock } from '../../src/shared/types/clock.types.js';
 import type { IdGenerator } from '../../src/shared/types/id-generator.types.js';

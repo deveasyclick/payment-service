@@ -1,15 +1,15 @@
 import type {
   CreatePaymentResult,
   UpdatePaymentResult,
-} from '../../modules/payments/payment-repository.types.js';
+} from '../../modules/payments/types/payment-repository.types.js';
 import type {
   IdempotencyRecord,
   Payment,
-} from '../../modules/payments/payment.types.js';
+} from '../../modules/payments/types/payment.types.js';
 import {
   InvalidPaymentVersionError,
   RepositoryInvariantError,
-} from '../../modules/payments/payment-repository.errors.js';
+} from '../../modules/payments/payment.errors.js';
 import { STORAGE_SCHEMA_VERSION } from './storage.const.js';
 import type { DocumentMutation, StorageDocument } from './storage.types.js';
 

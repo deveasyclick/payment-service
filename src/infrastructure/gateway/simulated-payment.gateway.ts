@@ -4,8 +4,8 @@ import type {
   PaymentGateway,
   PaymentGatewayContext,
   PaymentGatewayResult,
-} from '../../modules/payments/payment-gateway.types.js';
-import type { Payment } from '../../modules/payments/payment.types.js';
+} from '../../modules/payments/types/payment-gateway.types.js';
+import type { Payment } from '../../modules/payments/types/payment.types.js';
 import type { SimulatedGatewayOutcome } from '../../shared/types/config.types.js';
 
 export class SimulatedPaymentGateway implements PaymentGateway {

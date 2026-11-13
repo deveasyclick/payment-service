@@ -1,15 +1,15 @@
 import type {
   PaymentGateway,
   PaymentGatewayResult,
-} from './payment-gateway.types.js';
-import type { PaymentRepository } from './payment-repository.types.js';
+} from './types/payment-gateway.types.js';
+import type { PaymentRepository } from './types/payment-repository.types.js';
 import {
   GatewayAttemptAbortedError,
   GatewayAttemptTimeoutError,
-} from './payment-worker.errors.js';
-import type { PaymentWorkerOptions } from './payment-worker.types.js';
+} from './payment.errors.js';
+import type { PaymentWorkerOptions } from './types/payment-worker.types.js';
 import { assertPaymentTransitionAllowed } from './payment.state-machine.js';
-import type { Payment, PaymentFailureCode } from './payment.types.js';
+import type { Payment, PaymentFailureCode } from './types/payment.types.js';
 import type { Clock } from '../../shared/types/clock.types.js';
 import type { ServiceLogger } from '../../shared/types/logger.types.js';
 

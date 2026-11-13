@@ -5,9 +5,9 @@ import type {
   CreatePaymentResult,
   PaymentRepository,
   UpdatePaymentResult,
-} from '../payment-repository.types.js';
-import { RepositoryNotInitializedError } from '../payment-repository.errors.js';
-import type { IdempotencyRecord, Payment } from '../payment.types.js';
+} from '../types/payment-repository.types.js';
+import { RepositoryNotInitializedError } from '../payment.errors.js';
+import type { IdempotencyRecord, Payment } from '../types/payment.types.js';
 import { MutationQueue } from '../../../shared/helpers/mutation-queue.js';
 import { writeFileAtomically as defaultAtomicWriter } from '../../../infrastructure/storage/atomic-file-writer.js';
 import { PaymentStorageState } from '../../../infrastructure/storage/payment-storage-state.js';

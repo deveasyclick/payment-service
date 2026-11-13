@@ -9,7 +9,7 @@ import { loadConfig } from '../../src/config/index.js';
 import { writeFileAtomically } from '../../src/infrastructure/storage/atomic-file-writer.js';
 import { PaymentService } from '../../src/modules/payments/payment.service.js';
 import { PaymentWorker } from '../../src/modules/payments/payment.worker.js';
-import type { PaymentGatewayResult } from '../../src/modules/payments/payment-gateway.types.js';
+import type { PaymentGatewayResult } from '../../src/modules/payments/types/payment-gateway.types.js';
 import { JsonPaymentRepository } from '../../src/modules/payments/repositories/json-payment.repository.js';
 import { UuidGenerator } from '../../src/shared/helpers/id-generator.js';
 import { requestApp } from '../helpers/request-app.js';

@@ -6,7 +6,7 @@ import type {
   CreatePaymentCommand,
   UpdatePaymentStatusBody,
   UpdatePaymentStatusCommand,
-} from './payment-service.types.js';
+} from './types/payment-service.types.js';
 
 const amountSchema = z.number().int().positive().max(999_999_999_999);
 // ISO 4217-style code: exactly three uppercase ASCII letters.

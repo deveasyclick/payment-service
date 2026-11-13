@@ -5,7 +5,7 @@ import { PaymentStorageState } from '../../src/infrastructure/storage/payment-st
 import {
   InvalidPaymentVersionError,
   RepositoryNotInitializedError,
-} from '../../src/modules/payments/payment-repository.errors.js';
+} from '../../src/modules/payments/payment.errors.js';
 import {
   buildIdempotencyRecord,
   buildPayment,
