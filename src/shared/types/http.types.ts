@@ -24,6 +24,7 @@ export interface ErrorResponse {
   readonly error: {
     readonly code: string;
     readonly message: string;
+    readonly path: string;
     readonly details?: readonly ErrorDetail[];
     readonly requestId: string;
   };

@@ -13,7 +13,14 @@ export function createRequestLoggingMiddleware(logger: Logger): RequestHandler {
       String(response.getHeader('X-Request-Id')),
     wrapSerializers: false,
     serializers: {
-      req: (request: { method?: string }) => ({ method: request.method }),
+      req: (request: {
+        method?: string;
+        originalUrl?: string;
+        url?: string;
+      }) => ({
+        method: request.method,
+        path: (request.originalUrl ?? request.url ?? '/').split('?')[0] || '/',
+      }),
       res: (response: { statusCode: number }) => ({
         statusCode: response.statusCode,
       }),

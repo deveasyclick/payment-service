@@ -56,7 +56,7 @@ describe('request logging', () => {
             event: 'http_request_completed',
             requestId: 'request-123',
             level,
-            req: { method: 'POST' },
+            req: { method: 'POST', path: '/payments' },
             res: { statusCode },
           }),
         ]),
@@ -67,4 +67,33 @@ describe('request logging', () => {
       ).toBeTypeOf('number');
     },
   );
+
+  it('keeps the original mounted pathname when Express rewrites the request URL', () => {
+    const logs = captureLogs();
+    const socket = new Socket();
+    const request = new IncomingMessage(socket);
+    request.method = 'GET';
+    request.url = '/not-a-uuid?token=query-secret';
+    Object.assign(request, {
+      originalUrl: '/payments/not-a-uuid?token=query-secret',
+    });
+    const response = new ServerResponse(request);
+    response.setHeader('X-Request-Id', 'mounted-request');
+    response.statusCode = 400;
+
+    createRequestLoggingMiddleware(logs.logger)(
+      request as Request,
+      response as Response,
+      vi.fn(),
+    );
+    response.emit('finish');
+    socket.destroy();
+
+    expect(logs.entries()[0]).toMatchObject({
+      requestId: 'mounted-request',
+      req: { method: 'GET', path: '/payments/not-a-uuid' },
+    });
+    expect(logs.text()).not.toContain('query-secret');
+    expect(logs.text()).not.toContain('?');
+  });
 });

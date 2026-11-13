@@ -25,6 +25,7 @@ function requestIdFrom(response: Response): string {
 }
 
 function sendError(
+  request: Request,
   response: Response,
   status: number,
   code: string,
@@ -35,6 +36,7 @@ function sendError(
     error: {
       code,
       message,
+      path: request.originalUrl.split('?')[0] || '/',
       ...(details === undefined ? {} : { details }),
       requestId: requestIdFrom(response),
     },
@@ -71,11 +73,12 @@ function reportSafely(
 export function createErrorHandler(
   reportUnexpectedError: UnexpectedErrorReporter = () => undefined,
 ): ErrorRequestHandler {
-  return (error: unknown, _request: Request, response: Response, _next) => {
+  return (error: unknown, request: Request, response: Response, _next) => {
     void _next;
 
     if (error instanceof ZodError) {
       sendError(
+        request,
         response,
         400,
         'VALIDATION_ERROR',
@@ -90,6 +93,7 @@ export function createErrorHandler(
 
     if (errorStatus(error) === 413) {
       sendError(
+        request,
         response,
         413,
         'PAYLOAD_TOO_LARGE',
@@ -100,6 +104,7 @@ export function createErrorHandler(
 
     if (errorStatus(error) === 400 && error instanceof SyntaxError) {
       sendError(
+        request,
         response,
         400,
         'INVALID_JSON',
@@ -109,46 +114,64 @@ export function createErrorHandler(
     }
 
     if (error instanceof AuthenticationError) {
-      sendError(response, 401, 'UNAUTHORIZED', error.message);
+      sendError(request, response, 401, 'UNAUTHORIZED', error.message);
       return;
     }
 
     if (error instanceof PaymentNotFoundError) {
-      sendError(response, 404, 'PAYMENT_NOT_FOUND', error.message);
+      sendError(request, response, 404, 'PAYMENT_NOT_FOUND', error.message);
       return;
     }
 
     if (error instanceof RouteNotFoundError) {
-      sendError(response, 404, 'ROUTE_NOT_FOUND', error.message);
+      sendError(request, response, 404, 'ROUTE_NOT_FOUND', error.message);
       return;
     }
 
     if (error instanceof PaymentIdempotencyConflictError) {
-      sendError(response, 409, 'IDEMPOTENCY_CONFLICT', error.message);
+      sendError(request, response, 409, 'IDEMPOTENCY_CONFLICT', error.message);
       return;
     }
 
     if (error instanceof InvalidPaymentTransitionError) {
-      sendError(response, 409, 'INVALID_PAYMENT_TRANSITION', error.message);
+      sendError(
+        request,
+        response,
+        409,
+        'INVALID_PAYMENT_TRANSITION',
+        error.message,
+      );
       return;
     }
 
     if (error instanceof PaymentVersionConflictError) {
-      sendError(response, 412, 'PAYMENT_VERSION_CONFLICT', error.message);
+      sendError(
+        request,
+        response,
+        412,
+        'PAYMENT_VERSION_CONFLICT',
+        error.message,
+      );
       return;
     }
 
     if (error instanceof RateLimitExceededError) {
-      sendError(response, 429, 'RATE_LIMIT_EXCEEDED', error.message);
+      sendError(request, response, 429, 'RATE_LIMIT_EXCEEDED', error.message);
       return;
     }
 
     if (error instanceof ServiceNotReadyError) {
-      sendError(response, 503, 'SERVICE_NOT_READY', error.message);
+      sendError(request, response, 503, 'SERVICE_NOT_READY', error.message);
       return;
     }
 
     reportSafely(reportUnexpectedError, error, requestIdFrom(response));
-    sendError(response, 500, 'INTERNAL_ERROR', 'An unexpected error occurred');
+    sendError(
+      request,
+      response,
+      500,
+      'INTERNAL_ERROR',
+      'An unexpected error occurred',
+    );
   };
 }
