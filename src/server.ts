@@ -1,136 +1,145 @@
-import { once } from 'node:events';
-import type { Server } from 'node:http';
+import type {
+  CloseableHttpServer,
+  ServerDependencies,
+} from './server.types.js';
 
-import { createLogger } from './infrastructure/logging/logger.js';
+export class PaymentServer {
+  private httpServer: CloseableHttpServer | undefined;
+  private ready = false;
+  private startup: Promise<void> | undefined;
+  private shutdown: Promise<void> | undefined;
 
-import { createApp } from './app.js';
-import { loadConfig } from './config/index.js';
-import { SimulatedPaymentGateway } from './infrastructure/gateway/simulated-payment.gateway.js';
-import { PaymentService } from './modules/payments/payment.service.js';
-import { PaymentWorker } from './modules/payments/payment.worker.js';
-import { JsonPaymentRepository } from './modules/payments/repositories/json-payment.repository.js';
-import { closeHttpServer } from './server-lifecycle.js';
-import { SystemClock } from './shared/helpers/clock.js';
-import { UuidGenerator } from './shared/helpers/id-generator.js';
+  constructor(private readonly dependencies: ServerDependencies) {}
 
-const config = loadConfig();
-const logger = createLogger(config.logLevel);
-const clock = new SystemClock();
-const repository = new JsonPaymentRepository({
-  filePath: config.dataFilePath,
-});
-const paymentService = new PaymentService(
-  repository,
-  clock,
-  new UuidGenerator(),
-);
-const gateway = new SimulatedPaymentGateway(
-  config.simulatedGateway.latencyMs,
-  config.simulatedGateway.outcome,
-);
-const worker = new PaymentWorker(
-  repository,
-  gateway,
-  clock,
-  config.worker,
-  Math.random,
-  (error) => {
-    logger.error(
-      { event: 'payment_worker_poll_failed', err: error },
-      'Payment worker poll failed',
-    );
-  },
-  logger,
-);
-
-let ready = false;
-const app = createApp({
-  config,
-  logger,
-  paymentService,
-  isReady: () => ready,
-  reportUnexpectedError: (error, requestId) => {
-    logger.error(
-      { event: 'http_unexpected_error', err: error, requestId },
-      'HTTP request failed',
-    );
-  },
-});
-
-async function start(): Promise<void> {
-  await repository.initialize();
-  const recoveredPayments = await repository.recoverExpiredPayments(
-    clock.now(),
-    config.worker.leaseMs,
-  );
-  logger.info(
-    { event: 'payment_leases_recovered', recoveredPayments },
-    'Expired payment leases recovered',
-  );
-
-  worker.start();
-  const server = app.listen(config.port);
-
-  try {
-    await once(server, 'listening');
-  } catch (error) {
-    await worker.stop();
-    throw error;
+  isReady(): boolean {
+    return this.ready;
   }
 
-  ready = true;
-  logger.info(
-    { event: 'service_started', port: config.port, recoveredPayments },
-    'Payment service started',
-  );
-  installShutdownHandlers(server);
-}
+  start(): Promise<void> {
+    this.startup ??= this.startService();
+    return this.startup;
+  }
 
-function installShutdownHandlers(server: Server): void {
-  let shutdown: Promise<void> | undefined;
+  stop(signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+    this.shutdown ??= this.stopService(signal);
+    return this.shutdown;
+  }
 
-  const handleSignal = (signal: NodeJS.Signals): void => {
-    shutdown ??= stop(server, signal);
+  registerSignalHandlers(): void {
+    process.once('SIGTERM', this.handleSignal);
+    process.once('SIGINT', this.handleSignal);
+  }
+
+  private readonly handleSignal = (signal: NodeJS.Signals): void => {
+    void this.stop(signal).catch((error: unknown) => {
+      process.exitCode = 1;
+      this.dependencies.logger.error(
+        { event: 'service_shutdown_failed', err: error, signal },
+        'Payment service shutdown failed',
+      );
+    });
   };
 
-  process.once('SIGTERM', handleSignal);
-  process.once('SIGINT', handleSignal);
-}
+  private async startService(): Promise<void> {
+    await this.dependencies.initializeStorage();
+    await this.dependencies.recoverWork();
+    this.dependencies.worker.start();
 
-async function stop(server: Server, signal: NodeJS.Signals): Promise<void> {
-  ready = false;
-  logger.info(
-    { event: 'service_stopping', signal },
-    'Payment service stopping',
-  );
+    try {
+      this.httpServer = await this.dependencies.listen();
+    } catch (error) {
+      try {
+        await this.dependencies.worker.stop();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'Service startup and worker cleanup failed',
+        );
+      }
+      throw error;
+    }
 
-  const [httpResult, workerResult] = await Promise.allSettled([
-    closeHttpServer(server, config.worker.shutdownTimeoutMs),
-    worker.stop(),
-  ]);
-
-  if (httpResult.status === 'rejected') {
-    process.exitCode = 1;
-    logger.error({ err: httpResult.reason }, 'HTTP server shutdown failed');
-  } else if (!httpResult.value) {
-    logger.warn('HTTP connections exceeded the shutdown deadline');
+    this.ready = true;
+    this.dependencies.logger.info(
+      { event: 'service_started', port: this.dependencies.port },
+      'Payment service started',
+    );
   }
 
-  if (workerResult.status === 'rejected') {
-    process.exitCode = 1;
-    logger.error({ err: workerResult.reason }, 'Worker shutdown failed');
-  } else if (!workerResult.value) {
-    logger.warn('Active payment work exceeded the shutdown deadline');
+  private async stopService(signal: NodeJS.Signals): Promise<void> {
+    this.ready = false;
+    process.removeListener('SIGTERM', this.handleSignal);
+    process.removeListener('SIGINT', this.handleSignal);
+    const logger = this.dependencies.logger;
+    logger.info(
+      { event: 'service_stopping', signal },
+      'Payment service stopping',
+    );
+
+    const [httpResult, workerResult] = await Promise.allSettled([
+      this.httpServer === undefined
+        ? Promise.resolve(true)
+        : this.closeHttpServer(this.httpServer),
+      this.dependencies.worker.stop(),
+    ]);
+
+    if (httpResult.status === 'rejected') {
+      process.exitCode = 1;
+      logger.error(
+        { event: 'http_shutdown_failed', err: httpResult.reason },
+        'HTTP server shutdown failed',
+      );
+    } else if (!httpResult.value) {
+      logger.warn(
+        { event: 'http_shutdown_timeout' },
+        'HTTP connections exceeded the shutdown deadline',
+      );
+    }
+
+    if (workerResult.status === 'rejected') {
+      process.exitCode = 1;
+      logger.error(
+        { event: 'worker_shutdown_failed', err: workerResult.reason },
+        'Worker shutdown failed',
+      );
+    } else if (!workerResult.value) {
+      logger.warn(
+        { event: 'worker_shutdown_timeout' },
+        'Active payment work exceeded the shutdown deadline',
+      );
+    }
+
+    logger.info({ event: 'service_stopped' }, 'Payment service stopped');
+    logger.flush();
   }
 
-  logger.info({ event: 'service_stopped' }, 'Payment service stopped');
-  logger.flush();
+  private async closeHttpServer(server: CloseableHttpServer): Promise<boolean> {
+    return new Promise<boolean>((resolve, reject) => {
+      let settled = false;
+      const settle = (result: boolean, error?: unknown): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (error === undefined) resolve(result);
+        else
+          reject(
+            error instanceof Error
+              ? error
+              : new Error('HTTP server shutdown failed', { cause: error }),
+          );
+      };
+      const timeout = setTimeout(() => {
+        settle(false);
+        server.closeAllConnections?.();
+      }, this.dependencies.shutdownTimeoutMs);
+      try {
+        server.close((error) => {
+          settle(true, error);
+        });
+        server.closeIdleConnections?.();
+      } catch (error) {
+        settle(false, error);
+      }
+    });
+  }
 }
-
-void start().catch((error: unknown) => {
-  process.exitCode = 1;
-  logger.fatal(
-    { event: 'service_startup_failed', err: error },
-    'Payment service failed to start',
-  );
-});

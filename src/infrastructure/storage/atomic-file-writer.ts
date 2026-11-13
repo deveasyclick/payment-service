@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { open, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { createLogger } from '../logging/logger.js';
+import type { ServiceLogger } from '../../shared/types/logger.types.js';
 
 export async function writeFileAtomically(
   filePath: string,
   contents: string,
+  logger?: ServiceLogger,
 ): Promise<void> {
   const temporaryPath = join(
     dirname(filePath),
@@ -17,13 +20,34 @@ export async function writeFileAtomically(
     try {
       await handle.writeFile(contents, { encoding: 'utf8' });
       await handle.sync();
-    } finally {
-      await handle.close();
+    } catch (error) {
+      try {
+        await handle.close();
+      } catch (closeError) {
+        (logger ?? createLogger('info')).error(
+          { event: 'storage_file_close_failed', err: closeError, filePath },
+          'Failed to close temporary storage file after a write failure',
+        );
+      }
+      throw error;
     }
+    await handle.close();
 
     await rename(temporaryPath, filePath);
   } catch (error) {
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    try {
+      await rm(temporaryPath, { force: true });
+    } catch (cleanupError) {
+      (logger ?? createLogger('info')).error(
+        {
+          event: 'storage_cleanup_failed',
+          err: cleanupError,
+          filePath,
+          temporaryPath,
+        },
+        'Failed to remove temporary storage file',
+      );
+    }
     throw error;
   }
 }

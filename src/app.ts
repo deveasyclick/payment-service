@@ -59,17 +59,7 @@ export function createApp(dependencies: AppDependencies): Express {
   app.use((_request, _response, next) => {
     next(new RouteNotFoundError());
   });
-  app.use(
-    createErrorHandler(
-      dependencies.reportUnexpectedError ??
-        ((error, requestId) => {
-          logger.error(
-            { event: 'http_unexpected_error', err: error, requestId },
-            'Unexpected HTTP error',
-          );
-        }),
-    ),
-  );
+  app.use(createErrorHandler(logger));
 
   return app;
 }

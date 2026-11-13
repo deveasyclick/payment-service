@@ -5,3 +5,11 @@ export class GatewayAttemptTimeoutError extends Error {
     super(`Payment gateway attempt exceeded ${timeoutMs}ms`);
   }
 }
+
+export class GatewayAttemptAbortedError extends Error {
+  override readonly name = 'GatewayAttemptAbortedError';
+
+  constructor() {
+    super('Payment gateway attempt aborted during shutdown');
+  }
+}

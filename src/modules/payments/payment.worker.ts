@@ -3,7 +3,10 @@ import type {
   PaymentGatewayResult,
 } from './payment-gateway.types.js';
 import type { PaymentRepository } from './payment-repository.types.js';
-import { GatewayAttemptTimeoutError } from './payment-worker.errors.js';
+import {
+  GatewayAttemptAbortedError,
+  GatewayAttemptTimeoutError,
+} from './payment-worker.errors.js';
 import type { PaymentWorkerOptions } from './payment-worker.types.js';
 import { assertPaymentTransitionAllowed } from './payment.state-machine.js';
 import type { Payment, PaymentFailureCode } from './payment.types.js';
@@ -15,6 +18,7 @@ export class PaymentWorker {
   private activePoll: Promise<void> | undefined;
   private pollTimer: NodeJS.Timeout | undefined;
   private running = false;
+  private stopping = false;
 
   constructor(
     private readonly repository: PaymentRepository,
@@ -22,7 +26,6 @@ export class PaymentWorker {
     private readonly clock: Clock,
     private readonly options: PaymentWorkerOptions,
     private readonly random: () => number = Math.random,
-    private readonly reportError: (error: unknown) => void = () => undefined,
     private readonly logger?: ServiceLogger,
   ) {}
 
@@ -32,11 +35,13 @@ export class PaymentWorker {
     }
 
     this.running = true;
+    this.stopping = false;
     this.schedulePoll(0);
   }
 
   async stop(): Promise<boolean> {
     this.running = false;
+    this.stopping = true;
 
     if (this.pollTimer !== undefined) {
       clearTimeout(this.pollTimer);
@@ -71,11 +76,23 @@ export class PaymentWorker {
   }
 
   async processNextPayment(): Promise<boolean> {
+    if (this.stopping) return false;
+    const recoveredPayments = await this.repository.recoverExpiredPayments(
+      this.clock.now(),
+      this.options.leaseMs,
+      this.options.maxAttempts,
+    );
+    if (recoveredPayments > 0)
+      this.logger?.info(
+        { event: 'payment_leases_recovered', recoveredPayments },
+        'Expired payment leases recovered',
+      );
+    if (this.stopping) return false;
     const claimedPayment = await this.repository.claimNextDuePayment(
       this.clock.now(),
     );
 
-    if (claimedPayment === undefined) {
+    if (claimedPayment === undefined || this.stopping) {
       return false;
     }
 
@@ -94,9 +111,21 @@ export class PaymentWorker {
     try {
       result = await this.processWithTimeout(claimedPayment);
     } catch (error) {
+      if (this.stopping || error instanceof GatewayAttemptAbortedError) {
+        this.logger?.warn(
+          {
+            event: 'payment_attempt_interrupted',
+            paymentId: claimedPayment.id,
+            attemptCount: claimedPayment.attemptCount,
+          },
+          'Interrupted payment retained for lease recovery',
+        );
+        return true;
+      }
       this.logger?.warn(
         {
           event: 'payment_gateway_error',
+          err: error,
           paymentId: claimedPayment.id,
           attemptCount: claimedPayment.attemptCount,
           failureCode:
@@ -132,16 +161,22 @@ export class PaymentWorker {
     const abortController = new AbortController();
     this.activeAttemptController = abortController;
     let timeout: NodeJS.Timeout | undefined;
+    let onAbort: (() => void) | undefined;
+    const abortedResult = new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(new GatewayAttemptAbortedError());
+      abortController.signal.addEventListener('abort', onAbort, { once: true });
+    });
     const timeoutResult = new Promise<never>((_resolve, reject) => {
       timeout = setTimeout(() => {
-        abortController.abort();
         reject(new GatewayAttemptTimeoutError(this.options.attemptTimeoutMs));
+        abortController.abort();
       }, this.options.attemptTimeoutMs);
       timeout.unref();
     });
 
     try {
       return await Promise.race([
+        abortedResult,
         this.gateway.processPayment(payment, {
           idempotencyKey: payment.id,
           signal: abortController.signal,
@@ -152,6 +187,8 @@ export class PaymentWorker {
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
+      if (onAbort !== undefined)
+        abortController.signal.removeEventListener('abort', onAbort);
 
       if (this.activeAttemptController === abortController) {
         this.activeAttemptController = undefined;
@@ -308,7 +345,10 @@ export class PaymentWorker {
     try {
       await this.processNextPayment();
     } catch (error) {
-      this.reportError(error);
+      this.logger?.error(
+        { event: 'payment_worker_poll_failed', err: error },
+        'Payment worker poll failed',
+      );
     }
   }
 }

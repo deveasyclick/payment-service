@@ -3,6 +3,7 @@ import type {
   Payment,
 } from '../../modules/payments/payment.types.js';
 import type { STORAGE_SCHEMA_VERSION } from './storage.const.js';
+import type { ServiceLogger } from '../../shared/types/logger.types.js';
 
 export interface StorageDocument {
   readonly schemaVersion: typeof STORAGE_SCHEMA_VERSION;
@@ -21,6 +22,7 @@ export type AtomicFileWriter = (
 ) => Promise<void>;
 
 export interface JsonPaymentRepositoryOptions {
+  readonly logger?: ServiceLogger;
   readonly filePath: string;
   readonly writeFileAtomically?: AtomicFileWriter;
 }

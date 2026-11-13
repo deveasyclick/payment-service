@@ -13,11 +13,8 @@ import {
   RouteNotFoundError,
   ServiceNotReadyError,
 } from '../shared/errors/http.errors.js';
-import type {
-  ErrorDetail,
-  ErrorResponse,
-  UnexpectedErrorReporter,
-} from '../shared/types/http.types.js';
+import type { ErrorDetail, ErrorResponse } from '../shared/types/http.types.js';
+import type { ServiceLogger } from '../shared/types/logger.types.js';
 
 function requestIdFrom(response: Response): string {
   const requestId = response.getHeader('X-Request-Id');
@@ -42,6 +39,18 @@ function sendError(
     },
   };
 
+  if (status < 500) {
+    request.log.warn(
+      {
+        event: 'http_request_rejected',
+        code,
+        path: body.error.path,
+        requestId: body.error.requestId,
+      },
+      'HTTP request rejected',
+    );
+  }
+
   response.status(status).json(body);
 }
 
@@ -58,21 +67,7 @@ function errorStatus(error: unknown): number | undefined {
   return undefined;
 }
 
-function reportSafely(
-  reporter: UnexpectedErrorReporter,
-  error: unknown,
-  requestId: string,
-): void {
-  try {
-    reporter(error, requestId);
-  } catch {
-    // Error reporting must never replace the original request failure.
-  }
-}
-
-export function createErrorHandler(
-  reportUnexpectedError: UnexpectedErrorReporter = () => undefined,
-): ErrorRequestHandler {
+export function createErrorHandler(logger: ServiceLogger): ErrorRequestHandler {
   return (error: unknown, request: Request, response: Response, _next) => {
     void _next;
 
@@ -161,11 +156,27 @@ export function createErrorHandler(
     }
 
     if (error instanceof ServiceNotReadyError) {
+      logger.warn(
+        {
+          event: 'http_service_not_ready',
+          requestId: requestIdFrom(response),
+          path: request.originalUrl.split('?')[0] || '/',
+        },
+        'HTTP service is not ready',
+      );
       sendError(request, response, 503, 'SERVICE_NOT_READY', error.message);
       return;
     }
 
-    reportSafely(reportUnexpectedError, error, requestIdFrom(response));
+    logger.error(
+      {
+        event: 'http_unexpected_error',
+        err: error,
+        requestId: requestIdFrom(response),
+        path: request.originalUrl.split('?')[0] || '/',
+      },
+      'Unexpected HTTP error',
+    );
     sendError(
       request,
       response,

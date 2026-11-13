@@ -78,10 +78,18 @@ export class InMemoryPaymentRepository implements PaymentRepository {
     });
   }
 
-  async recoverExpiredPayments(now: Date, leaseMs: number): Promise<number> {
+  async recoverExpiredPayments(
+    now: Date,
+    leaseMs: number,
+    maxAttempts: number,
+  ): Promise<number> {
     return this.mutationQueue.run(() => {
       this.assertInitialized();
-      const mutation = this.state.recoverExpiredPayments(now, leaseMs);
+      const mutation = this.state.recoverExpiredPayments(
+        now,
+        leaseMs,
+        maxAttempts,
+      );
       if (mutation.result > 0) {
         this.state = new PaymentStorageState(mutation.document);
       }

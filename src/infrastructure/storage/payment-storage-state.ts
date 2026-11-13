@@ -37,7 +37,9 @@ export class PaymentStorageState {
   }
 
   findIdempotencyRecordByKey(key: string): IdempotencyRecord | undefined {
-    const record = this.document.idempotencyRecords[key];
+    const record = Object.hasOwn(this.document.idempotencyRecords, key)
+      ? this.document.idempotencyRecords[key]
+      : undefined;
     return record === undefined
       ? undefined
       : this.cloneIdempotencyRecord(record);
@@ -62,7 +64,12 @@ export class PaymentStorageState {
       );
     }
 
-    const existingRecord = document.idempotencyRecords[idempotencyRecord.key];
+    const existingRecord = Object.hasOwn(
+      document.idempotencyRecords,
+      idempotencyRecord.key,
+    )
+      ? document.idempotencyRecords[idempotencyRecord.key]
+      : undefined;
 
     if (existingRecord !== undefined) {
       const existingPayment = document.payments[existingRecord.paymentId];
@@ -203,7 +210,11 @@ export class PaymentStorageState {
     };
   }
 
-  recoverExpiredPayments(now: Date, leaseMs: number): DocumentMutation<number> {
+  recoverExpiredPayments(
+    now: Date,
+    leaseMs: number,
+    maxAttempts: number,
+  ): DocumentMutation<number> {
     const document = this.document;
     const nowIso = now.toISOString();
     const leaseCutoff = new Date(now.getTime() - leaseMs).toISOString();
@@ -219,6 +230,7 @@ export class PaymentStorageState {
         }
 
         recoveredCount += 1;
+        const exhausted = payment.attemptCount >= maxAttempts;
         const recoveredPayment: Payment = {
           id: payment.id,
           amount: payment.amount,
@@ -226,9 +238,11 @@ export class PaymentStorageState {
           ...(payment.reference === undefined
             ? {}
             : { reference: payment.reference }),
-          status: 'pending',
+          status: exhausted ? 'failed' : 'pending',
           attemptCount: payment.attemptCount,
-          nextAttemptAt: nowIso,
+          ...(exhausted
+            ? { failureCode: 'attempts_exhausted' as const }
+            : { nextAttemptAt: nowIso }),
           createdAt: payment.createdAt,
           updatedAt: nowIso,
           version: payment.version + 1,

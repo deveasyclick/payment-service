@@ -11,6 +11,7 @@ import type { IdempotencyRecord, Payment } from '../payment.types.js';
 import { MutationQueue } from '../../../shared/helpers/mutation-queue.js';
 import { writeFileAtomically as defaultAtomicWriter } from '../../../infrastructure/storage/atomic-file-writer.js';
 import { PaymentStorageState } from '../../../infrastructure/storage/payment-storage-state.js';
+import type { ServiceLogger } from '../../../shared/types/logger.types.js';
 import { parseStorageDocument } from '../../../infrastructure/storage/storage.schemas.js';
 import type {
   AtomicFileWriter,
@@ -26,12 +27,15 @@ export class JsonPaymentRepository implements PaymentRepository {
   private readonly filePath: string;
   private readonly mutationQueue = new MutationQueue();
   private readonly writeFileAtomically: AtomicFileWriter;
+  private readonly logger: ServiceLogger | undefined;
   private state: PaymentStorageState | undefined;
 
   constructor(options: JsonPaymentRepositoryOptions) {
     this.filePath = options.filePath;
+    this.logger = options.logger;
     this.writeFileAtomically =
-      options.writeFileAtomically ?? defaultAtomicWriter;
+      options.writeFileAtomically ??
+      ((path, contents) => defaultAtomicWriter(path, contents, options.logger));
   }
 
   async initialize(): Promise<void> {
@@ -49,6 +53,11 @@ export class JsonPaymentRepository implements PaymentRepository {
         if (!isNodeError(error) || error.code !== 'ENOENT') {
           throw error;
         }
+
+        this.logger?.info(
+          { event: 'storage_file_missing', filePath: this.filePath },
+          'Storage file does not exist; initializing empty storage',
+        );
 
         const initialState = new PaymentStorageState();
         const initialDocument = initialState.toDocument();
@@ -117,9 +126,17 @@ export class JsonPaymentRepository implements PaymentRepository {
     });
   }
 
-  async recoverExpiredPayments(now: Date, leaseMs: number): Promise<number> {
+  async recoverExpiredPayments(
+    now: Date,
+    leaseMs: number,
+    maxAttempts: number,
+  ): Promise<number> {
     return this.mutationQueue.run(async () => {
-      const mutation = this.getState().recoverExpiredPayments(now, leaseMs);
+      const mutation = this.getState().recoverExpiredPayments(
+        now,
+        leaseMs,
+        maxAttempts,
+      );
 
       if (mutation.result > 0) {
         await this.persistAndPublish(mutation.document);
