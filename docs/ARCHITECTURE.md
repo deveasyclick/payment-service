@@ -89,12 +89,14 @@ payment-service/
 │   │   ├── gateway/
 │   │   │   └── simulated-payment.gateway.ts
 │   │   └── logging/
+│   │       ├── logging.const.ts
 │   │       └── logger.ts
 │   ├── middleware/
 │   │   ├── authenticate.ts
 │   │   ├── error-handler.ts
 │   │   ├── rate-limit.ts
 │   │   ├── request-id.ts
+│   │   ├── request-logging.ts
 │   │   └── validate.ts
 │   └── shared/
 │       ├── errors/
@@ -108,7 +110,8 @@ payment-service/
 │           ├── clock.types.ts
 │           ├── config.types.ts
 │           ├── http.types.ts
-│           └── id-generator.types.ts
+│           ├── id-generator.types.ts
+│           └── logger.types.ts
 ├── tests/
 │   ├── unit/
 │   │   ├── modules/
@@ -120,15 +123,18 @@ payment-service/
 │   │   │       ├── payment-service.test.ts
 │   │   │       └── payment-worker.test.ts
 │   │   ├── infrastructure/
+│   │   │   ├── logger.test.ts
 │   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
 │   │   ├── server-lifecycle.test.ts
+│   │   ├── request-logging.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
+│       ├── capture-logs.ts
 │       ├── create-test-app.ts
 │       ├── payment-fixtures.ts
 │       ├── scripted-payment-gateway.ts
@@ -414,13 +420,19 @@ The limiter's default in-memory counter matches the service's single-process dep
 
 Pino emits structured JSON logs. `pino-http` associates each request with `requestId`. Logs cover:
 
-- request completion: method, route template, status, duration, and request ID;
+- request completion: method, status, duration, and request ID;
 - payment creation and idempotent replay using payment ID, never the idempotency key;
 - worker claim, attempt number, retry scheduling, terminal outcome, and processing duration;
 - stale-lease recovery and optimistic-concurrency conflicts;
 - repository/startup/shutdown errors.
 
 Expected client validation failures use an appropriate lower log level to avoid noisy error logs. Tests use a silent logger or captured stream. Metrics and distributed tracing are omitted, but the event fields are designed to make their later addition straightforward.
+
+`requestId` links HTTP completion to payment creation/replay or status-update events, which include `paymentId`. Background events use that stable payment ID and `attemptCount`; the originating request ID is not persisted. A persisted retry or terminal result is logged only after the repository confirms the write. A version conflict produces `payment_worker_result_discarded` instead of a misleading completion event.
+
+Request serialization allows only the method; response serialization allows only the status. URLs, query strings, headers, bodies, and payment references are omitted. Common secret/body fields are also redacted at the logger boundary. Error serialization keeps type and stack call sites, excluding messages, causes, and custom properties. This sacrifices raw error-message detail to avoid leaking provider payloads or credentials. Logs use fixed messages and allowlisted context; field redaction cannot sanitize arbitrary free text.
+
+`info` records normal requests and persisted outcomes, `warn` records expected HTTP client errors, gateway exceptions/timeouts, and stale worker results, and `error` records unexpected HTTP, persistence, and polling failures. Logger instances and streams are injected; the app factory defaults to a silent logger. No mutable global logger is required.
 
 **Why:** structured, correlated events make asynchronous flows debuggable without leaking request bodies or secrets.
 

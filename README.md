@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, the secured Express API, asynchronous processing, restart recovery, and graceful server lifecycle are complete. Correlated/redacted request logging and the OpenAPI contract remain to be implemented.
+> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, the secured Express API, asynchronous processing, restart recovery, graceful server lifecycle, and correlated/redacted logging are complete. The OpenAPI contract remains to be implemented.
 
 ## What this project demonstrates
 
@@ -104,12 +104,14 @@ payment-service/
 │   │   ├── gateway/
 │   │   │   └── simulated-payment.gateway.ts
 │   │   └── logging/
+│   │       ├── logging.const.ts
 │   │       └── logger.ts
 │   ├── middleware/
 │   │   ├── authenticate.ts
 │   │   ├── error-handler.ts
 │   │   ├── rate-limit.ts
 │   │   ├── request-id.ts
+│   │   ├── request-logging.ts
 │   │   └── validate.ts
 │   └── shared/
 │       ├── errors/
@@ -123,7 +125,8 @@ payment-service/
 │           ├── clock.types.ts
 │           ├── config.types.ts
 │           ├── http.types.ts
-│           └── id-generator.types.ts
+│           ├── id-generator.types.ts
+│           └── logger.types.ts
 ├── tests/
 │   ├── unit/
 │   │   ├── modules/
@@ -135,15 +138,18 @@ payment-service/
 │   │   │       ├── payment-service.test.ts
 │   │   │       └── payment-worker.test.ts
 │   │   ├── infrastructure/
+│   │   │   ├── logger.test.ts
 │   │   │   └── simulated-payment-gateway.test.ts
 │   │   ├── shared/
 │   │   │   └── helpers.test.ts
 │   │   ├── server-lifecycle.test.ts
+│   │   ├── request-logging.test.ts
 │   │   └── config.test.ts
 │   ├── integration/
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
+│       ├── capture-logs.ts
 │       ├── create-test-app.ts
 │       ├── payment-fixtures.ts
 │       ├── scripted-payment-gateway.ts
@@ -377,7 +383,7 @@ The default limiter is process-local, matching the single-process service. It re
 
 ## Logging and observability
 
-Pino will emit structured JSON logs containing request and payment correlation data. Important events include:
+Pino emits structured JSON logs containing request and payment correlation data. Important events include:
 
 - HTTP request completion and duration
 - New payment creation and idempotent replay
@@ -389,6 +395,12 @@ Pino will emit structured JSON logs containing request and payment correlation d
 - Startup, persistence, and shutdown errors
 
 Sensitive headers, request bodies, and raw payment-provider errors are excluded or redacted.
+
+HTTP logs carry `requestId`, method, status, and `responseTime` in milliseconds. Payment creation/replay and status-update logs link that request to `paymentId`; worker logs use the same `paymentId` with `attemptCount`, outcome, and `durationMs`. Search by `requestId` to inspect an HTTP request, then by `paymentId` to follow its background processing across attempts and restarts. Request IDs are not stored in the payment document.
+
+Successful requests and persisted worker outcomes use `info`; expected client failures and discarded stale worker results use `warn`; unexpected HTTP, repository, and polling failures use `error`. `LOG_LEVEL` controls output. Request URLs, query strings, headers, bodies, and payment references are omitted. Error serialization retains the type and stack call sites while omitting messages, causes, and custom properties that may contain sensitive values. Explicit redaction of common secret fields provides an additional safeguard; callers must still log only approved fields and fixed messages.
+
+The app factory accepts an injected logger and defaults to silent logging for tests. Captured-log tests verify correlation, HTTP levels and durations, secret redaction, retry/completion events, and stale-result handling without changing global logger state.
 
 ## Testing approach
 
