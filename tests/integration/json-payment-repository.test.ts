@@ -1,0 +1,174 @@
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import { writeFileAtomically } from '../../src/infrastructure/storage/atomic-file-writer.js';
+import { JsonPaymentRepository } from '../../src/modules/payments/repositories/json-payment.repository.js';
+import {
+  InvalidStorageDataError,
+  UnsupportedStorageVersionError,
+} from '../../src/infrastructure/storage/storage.errors.js';
+import type { AtomicFileWriter } from '../../src/infrastructure/storage/storage.types.js';
+import {
+  buildIdempotencyRecord,
+  buildPayment,
+} from '../helpers/payment-fixtures.js';
+
+describe('JsonPaymentRepository', () => {
+  let directory: string;
+  let filePath: string;
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'payment-repository-'));
+    filePath = join(directory, 'nested', 'payments.json');
+  });
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it('creates its directory and persists payments across instances', async () => {
+    const payment = buildPayment();
+    const record = buildIdempotencyRecord();
+    const firstRepository = new JsonPaymentRepository({ filePath });
+    await firstRepository.initialize();
+    await firstRepository.createPayment(payment, record);
+
+    const secondRepository = new JsonPaymentRepository({ filePath });
+    await secondRepository.initialize();
+
+    await expect(secondRepository.findPaymentById(payment.id)).resolves.toEqual(
+      payment,
+    );
+    await expect(
+      secondRepository.findIdempotencyRecordByKey(record.key),
+    ).resolves.toEqual(record);
+    await expect(
+      secondRepository.createPayment(payment, record),
+    ).resolves.toMatchObject({ kind: 'replayed', payment });
+    expect(await readdir(join(directory, 'nested'))).toEqual(['payments.json']);
+  });
+
+  it('serializes concurrent versioned updates without losing data', async () => {
+    const repository = new JsonPaymentRepository({ filePath });
+    await repository.initialize();
+    const payment = buildPayment();
+    await repository.createPayment(payment, buildIdempotencyRecord());
+    const processing = buildPayment({
+      status: 'processing',
+      attemptCount: 1,
+      processingStartedAt: '2026-11-13T12:01:00.000Z',
+      updatedAt: '2026-11-13T12:01:00.000Z',
+      version: 2,
+    });
+    const failed = buildPayment({
+      status: 'failed',
+      failureCode: 'cancelled_by_operator',
+      updatedAt: '2026-11-13T12:01:00.000Z',
+      version: 2,
+    });
+
+    const results = await Promise.all([
+      repository.updatePayment(processing, 1),
+      repository.updatePayment(failed, 1),
+    ]);
+
+    expect(results.map((result) => result.kind).sort()).toEqual([
+      'updated',
+      'version_conflict',
+    ]);
+    const reloadedRepository = new JsonPaymentRepository({ filePath });
+    await reloadedRepository.initialize();
+    expect(
+      (await reloadedRepository.findPaymentById(payment.id))?.version,
+    ).toBe(2);
+  });
+
+  it('does not publish or persist a mutation when its atomic write fails', async () => {
+    let rejectWrites = false;
+    const writer: AtomicFileWriter = async (path, contents) => {
+      if (rejectWrites) {
+        throw new Error('simulated disk failure');
+      }
+
+      await writeFileAtomically(path, contents);
+    };
+    const repository = new JsonPaymentRepository({
+      filePath,
+      writeFileAtomically: writer,
+    });
+    await repository.initialize();
+    const payment = buildPayment();
+    await repository.createPayment(payment, buildIdempotencyRecord());
+    rejectWrites = true;
+
+    await expect(
+      repository.updatePayment(
+        buildPayment({
+          status: 'failed',
+          failureCode: 'cancelled_by_operator',
+          updatedAt: '2026-11-13T12:01:00.000Z',
+          version: 2,
+        }),
+        1,
+      ),
+    ).rejects.toThrow('simulated disk failure');
+    await expect(repository.findPaymentById(payment.id)).resolves.toEqual(
+      payment,
+    );
+
+    const reloadedRepository = new JsonPaymentRepository({ filePath });
+    await reloadedRepository.initialize();
+    await expect(
+      reloadedRepository.findPaymentById(payment.id),
+    ).resolves.toEqual(payment);
+
+    rejectWrites = false;
+    await expect(
+      repository.updatePayment(
+        buildPayment({
+          status: 'failed',
+          failureCode: 'cancelled_by_operator',
+          updatedAt: '2026-11-13T12:01:00.000Z',
+          version: 2,
+        }),
+        1,
+      ),
+    ).resolves.toMatchObject({ kind: 'updated' });
+  });
+
+  it('rejects malformed storage without replacing it', async () => {
+    const malformed = '{ definitely not JSON';
+    await mkdir(join(directory, 'nested'), { recursive: true });
+    await writeFile(filePath, malformed, 'utf8');
+    const repository = new JsonPaymentRepository({ filePath });
+
+    await expect(repository.initialize()).rejects.toBeInstanceOf(
+      InvalidStorageDataError,
+    );
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(malformed);
+  });
+
+  it('rejects an unsupported schema version without replacing it', async () => {
+    const repository = new JsonPaymentRepository({ filePath });
+    await repository.initialize();
+    const unsupported =
+      '{"schemaVersion":999,"payments":{},"idempotencyRecords":{}}\n';
+    await writeFile(filePath, unsupported, 'utf8');
+    const incompatibleRepository = new JsonPaymentRepository({ filePath });
+
+    await expect(incompatibleRepository.initialize()).rejects.toBeInstanceOf(
+      UnsupportedStorageVersionError,
+    );
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(unsupported);
+  });
+});
