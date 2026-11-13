@@ -10,6 +10,11 @@ export interface StorageDocument {
   readonly idempotencyRecords: Readonly<Record<string, IdempotencyRecord>>;
 }
 
+export interface DocumentMutation<T> {
+  readonly document: StorageDocument;
+  readonly result: T;
+}
+
 export type AtomicFileWriter = (
   filePath: string,
   contents: string,

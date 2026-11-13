@@ -3,4 +3,5 @@ export interface PaymentWorkerOptions {
   readonly maxAttempts: number;
   readonly pollIntervalMs: number;
   readonly retryBaseDelayMs: number;
+  readonly shutdownTimeoutMs: number;
 }

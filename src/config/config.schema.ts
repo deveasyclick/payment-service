@@ -77,6 +77,10 @@ const environmentSchema = z
       CONFIG_DEFAULTS.workerRetryBaseDelayMs,
       { min: 10, max: 300_000 },
     ),
+    WORKER_SHUTDOWN_TIMEOUT_MS: integerFromEnvironment(
+      CONFIG_DEFAULTS.workerShutdownTimeoutMs,
+      { min: 100, max: 300_000 },
+    ),
     SIMULATED_GATEWAY_LATENCY_MS: integerFromEnvironment(
       CONFIG_DEFAULTS.simulatedGatewayLatencyMs,
       { min: 0, max: 300_000 },
@@ -127,6 +131,7 @@ const environmentSchema = z
       maxAttempts: value.WORKER_MAX_ATTEMPTS,
       pollIntervalMs: value.WORKER_POLL_INTERVAL_MS,
       retryBaseDelayMs: value.WORKER_RETRY_BASE_DELAY_MS,
+      shutdownTimeoutMs: value.WORKER_SHUTDOWN_TIMEOUT_MS,
     },
   }));
 

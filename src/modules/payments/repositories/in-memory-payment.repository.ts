@@ -6,22 +6,16 @@ import type {
 import { RepositoryNotInitializedError } from '../payment-repository.errors.js';
 import type { IdempotencyRecord, Payment } from '../payment.types.js';
 import { MutationQueue } from '../../../shared/helpers/mutation-queue.js';
-import {
-  claimNextDuePaymentInDocument,
-  cloneStorageDocument,
-  createEmptyStorageDocument,
-  createPaymentInDocument,
-  updatePaymentInDocument,
-} from '../../../infrastructure/storage/payment-storage-state.js';
+import { PaymentStorageState } from '../../../infrastructure/storage/payment-storage-state.js';
 import type { StorageDocument } from '../../../infrastructure/storage/storage.types.js';
 
 export class InMemoryPaymentRepository implements PaymentRepository {
   private readonly mutationQueue = new MutationQueue();
   private initialized = false;
-  private document: StorageDocument;
+  private state: PaymentStorageState;
 
-  constructor(initialDocument: StorageDocument = createEmptyStorageDocument()) {
-    this.document = cloneStorageDocument(initialDocument);
+  constructor(initialDocument?: StorageDocument) {
+    this.state = new PaymentStorageState(initialDocument);
   }
 
   initialize(): Promise<void> {
@@ -35,12 +29,10 @@ export class InMemoryPaymentRepository implements PaymentRepository {
   ): Promise<CreatePaymentResult> {
     return this.mutationQueue.run(() => {
       this.assertInitialized();
-      const mutation = createPaymentInDocument(
-        this.document,
-        payment,
-        idempotencyRecord,
-      );
-      this.document = mutation.document;
+      const mutation = this.state.createPayment(payment, idempotencyRecord);
+      if (mutation.result.kind === 'created') {
+        this.state = new PaymentStorageState(mutation.document);
+      }
       return mutation.result;
     });
   }
@@ -48,8 +40,7 @@ export class InMemoryPaymentRepository implements PaymentRepository {
   findPaymentById(id: string): Promise<Payment | undefined> {
     return Promise.resolve().then(() => {
       this.assertInitialized();
-      const payment = this.document.payments[id];
-      return payment === undefined ? undefined : structuredClone(payment);
+      return this.state.findPaymentById(id);
     });
   }
 
@@ -58,8 +49,7 @@ export class InMemoryPaymentRepository implements PaymentRepository {
   ): Promise<IdempotencyRecord | undefined> {
     return Promise.resolve().then(() => {
       this.assertInitialized();
-      const record = this.document.idempotencyRecords[key];
-      return record === undefined ? undefined : structuredClone(record);
+      return this.state.findIdempotencyRecordByKey(key);
     });
   }
 
@@ -69,12 +59,10 @@ export class InMemoryPaymentRepository implements PaymentRepository {
   ): Promise<UpdatePaymentResult> {
     return this.mutationQueue.run(() => {
       this.assertInitialized();
-      const mutation = updatePaymentInDocument(
-        this.document,
-        payment,
-        expectedVersion,
-      );
-      this.document = mutation.document;
+      const mutation = this.state.updatePayment(payment, expectedVersion);
+      if (mutation.result.kind === 'updated') {
+        this.state = new PaymentStorageState(mutation.document);
+      }
       return mutation.result;
     });
   }
@@ -82,8 +70,21 @@ export class InMemoryPaymentRepository implements PaymentRepository {
   async claimNextDuePayment(now: Date): Promise<Payment | undefined> {
     return this.mutationQueue.run(() => {
       this.assertInitialized();
-      const mutation = claimNextDuePaymentInDocument(this.document, now);
-      this.document = mutation.document;
+      const mutation = this.state.claimNextDuePayment(now);
+      if (mutation.result !== undefined) {
+        this.state = new PaymentStorageState(mutation.document);
+      }
+      return mutation.result;
+    });
+  }
+
+  async recoverExpiredPayments(now: Date, leaseMs: number): Promise<number> {
+    return this.mutationQueue.run(() => {
+      this.assertInitialized();
+      const mutation = this.state.recoverExpiredPayments(now, leaseMs);
+      if (mutation.result > 0) {
+        this.state = new PaymentStorageState(mutation.document);
+      }
       return mutation.result;
     });
   }

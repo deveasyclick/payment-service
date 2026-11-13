@@ -31,4 +31,5 @@ export interface PaymentRepository {
     expectedVersion: number,
   ): Promise<UpdatePaymentResult>;
   claimNextDuePayment(now: Date): Promise<Payment | undefined>;
+  recoverExpiredPayments(now: Date, leaseMs: number): Promise<number>;
 }

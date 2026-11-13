@@ -16,4 +16,5 @@ export const CONFIG_DEFAULTS = {
   workerMaxAttempts: 3,
   workerPollIntervalMs: 250,
   workerRetryBaseDelayMs: 250,
+  workerShutdownTimeoutMs: 10_000,
 } as const;

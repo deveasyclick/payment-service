@@ -10,6 +10,7 @@ import type { Payment, PaymentFailureCode } from './payment.types.js';
 import type { Clock } from '../../shared/types/clock.types.js';
 
 export class PaymentWorker {
+  private activeAttemptController: AbortController | undefined;
   private activePoll: Promise<void> | undefined;
   private pollTimer: NodeJS.Timeout | undefined;
   private running = false;
@@ -32,7 +33,7 @@ export class PaymentWorker {
     this.schedulePoll(0);
   }
 
-  async stop(): Promise<void> {
+  async stop(): Promise<boolean> {
     this.running = false;
 
     if (this.pollTimer !== undefined) {
@@ -40,7 +41,31 @@ export class PaymentWorker {
       this.pollTimer = undefined;
     }
 
-    await this.activePoll;
+    const activePoll = this.activePoll;
+    if (activePoll === undefined) {
+      return true;
+    }
+
+    let shutdownTimer: NodeJS.Timeout | undefined;
+    const stoppedGracefully = await Promise.race([
+      activePoll.then(() => true),
+      new Promise<false>((resolve) => {
+        shutdownTimer = setTimeout(
+          () => resolve(false),
+          this.options.shutdownTimeoutMs,
+        );
+      }),
+    ]);
+
+    if (shutdownTimer !== undefined) {
+      clearTimeout(shutdownTimer);
+    }
+
+    if (!stoppedGracefully) {
+      this.activeAttemptController?.abort();
+    }
+
+    return stoppedGracefully;
   }
 
   async processNextPayment(): Promise<boolean> {
@@ -81,6 +106,7 @@ export class PaymentWorker {
     payment: Payment,
   ): Promise<PaymentGatewayResult> {
     const abortController = new AbortController();
+    this.activeAttemptController = abortController;
     let timeout: NodeJS.Timeout | undefined;
     const timeoutResult = new Promise<never>((_resolve, reject) => {
       timeout = setTimeout(() => {
@@ -101,6 +127,10 @@ export class PaymentWorker {
     } finally {
       if (timeout !== undefined) {
         clearTimeout(timeout);
+      }
+
+      if (this.activeAttemptController === abortController) {
+        this.activeAttemptController = undefined;
       }
     }
   }

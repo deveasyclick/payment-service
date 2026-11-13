@@ -10,12 +10,7 @@ import { RepositoryNotInitializedError } from '../payment-repository.errors.js';
 import type { IdempotencyRecord, Payment } from '../payment.types.js';
 import { MutationQueue } from '../../../shared/helpers/mutation-queue.js';
 import { writeFileAtomically as defaultAtomicWriter } from '../../../infrastructure/storage/atomic-file-writer.js';
-import {
-  claimNextDuePaymentInDocument,
-  createEmptyStorageDocument,
-  createPaymentInDocument,
-  updatePaymentInDocument,
-} from '../../../infrastructure/storage/payment-storage-state.js';
+import { PaymentStorageState } from '../../../infrastructure/storage/payment-storage-state.js';
 import { parseStorageDocument } from '../../../infrastructure/storage/storage.schemas.js';
 import type {
   AtomicFileWriter,
@@ -31,7 +26,7 @@ export class JsonPaymentRepository implements PaymentRepository {
   private readonly filePath: string;
   private readonly mutationQueue = new MutationQueue();
   private readonly writeFileAtomically: AtomicFileWriter;
-  private document: StorageDocument | undefined;
+  private state: PaymentStorageState | undefined;
 
   constructor(options: JsonPaymentRepositoryOptions) {
     this.filePath = options.filePath;
@@ -41,7 +36,7 @@ export class JsonPaymentRepository implements PaymentRepository {
 
   async initialize(): Promise<void> {
     await this.mutationQueue.run(async () => {
-      if (this.document !== undefined) {
+      if (this.state !== undefined) {
         return;
       }
 
@@ -49,15 +44,16 @@ export class JsonPaymentRepository implements PaymentRepository {
 
       try {
         const contents = await readFile(this.filePath, 'utf8');
-        this.document = parseStorageDocument(contents);
+        this.state = new PaymentStorageState(parseStorageDocument(contents));
       } catch (error) {
         if (!isNodeError(error) || error.code !== 'ENOENT') {
           throw error;
         }
 
-        const initialDocument = createEmptyStorageDocument();
+        const initialState = new PaymentStorageState();
+        const initialDocument = initialState.toDocument();
         await this.persist(initialDocument);
-        this.document = initialDocument;
+        this.state = initialState;
       }
     });
   }
@@ -67,13 +63,12 @@ export class JsonPaymentRepository implements PaymentRepository {
     idempotencyRecord: IdempotencyRecord,
   ): Promise<CreatePaymentResult> {
     return this.mutationQueue.run(async () => {
-      const mutation = createPaymentInDocument(
-        this.getDocument(),
+      const mutation = this.getState().createPayment(
         payment,
         idempotencyRecord,
       );
 
-      if (mutation.document !== this.document) {
+      if (mutation.result.kind === 'created') {
         await this.persistAndPublish(mutation.document);
       }
 
@@ -83,8 +78,7 @@ export class JsonPaymentRepository implements PaymentRepository {
 
   findPaymentById(id: string): Promise<Payment | undefined> {
     return Promise.resolve().then(() => {
-      const payment = this.getDocument().payments[id];
-      return payment === undefined ? undefined : structuredClone(payment);
+      return this.getState().findPaymentById(id);
     });
   }
 
@@ -92,8 +86,7 @@ export class JsonPaymentRepository implements PaymentRepository {
     key: string,
   ): Promise<IdempotencyRecord | undefined> {
     return Promise.resolve().then(() => {
-      const record = this.getDocument().idempotencyRecords[key];
-      return record === undefined ? undefined : structuredClone(record);
+      return this.getState().findIdempotencyRecordByKey(key);
     });
   }
 
@@ -102,13 +95,9 @@ export class JsonPaymentRepository implements PaymentRepository {
     expectedVersion: number,
   ): Promise<UpdatePaymentResult> {
     return this.mutationQueue.run(async () => {
-      const mutation = updatePaymentInDocument(
-        this.getDocument(),
-        payment,
-        expectedVersion,
-      );
+      const mutation = this.getState().updatePayment(payment, expectedVersion);
 
-      if (mutation.document !== this.document) {
+      if (mutation.result.kind === 'updated') {
         await this.persistAndPublish(mutation.document);
       }
 
@@ -118,9 +107,9 @@ export class JsonPaymentRepository implements PaymentRepository {
 
   async claimNextDuePayment(now: Date): Promise<Payment | undefined> {
     return this.mutationQueue.run(async () => {
-      const mutation = claimNextDuePaymentInDocument(this.getDocument(), now);
+      const mutation = this.getState().claimNextDuePayment(now);
 
-      if (mutation.document !== this.document) {
+      if (mutation.result !== undefined) {
         await this.persistAndPublish(mutation.document);
       }
 
@@ -128,17 +117,29 @@ export class JsonPaymentRepository implements PaymentRepository {
     });
   }
 
-  private getDocument(): StorageDocument {
-    if (this.document === undefined) {
+  async recoverExpiredPayments(now: Date, leaseMs: number): Promise<number> {
+    return this.mutationQueue.run(async () => {
+      const mutation = this.getState().recoverExpiredPayments(now, leaseMs);
+
+      if (mutation.result > 0) {
+        await this.persistAndPublish(mutation.document);
+      }
+
+      return mutation.result;
+    });
+  }
+
+  private getState(): PaymentStorageState {
+    if (this.state === undefined) {
       throw new RepositoryNotInitializedError();
     }
 
-    return this.document;
+    return this.state;
   }
 
   private async persistAndPublish(document: StorageDocument): Promise<void> {
     await this.persist(document);
-    this.document = document;
+    this.state = new PaymentStorageState(document);
   }
 
   private async persist(document: StorageDocument): Promise<void> {

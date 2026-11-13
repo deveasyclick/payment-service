@@ -20,6 +20,7 @@ export interface WorkerConfig {
   readonly maxAttempts: number;
   readonly pollIntervalMs: number;
   readonly retryBaseDelayMs: number;
+  readonly shutdownTimeoutMs: number;
 }
 
 export type SimulatedGatewayOutcome =
