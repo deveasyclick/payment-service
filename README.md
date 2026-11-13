@@ -240,7 +240,6 @@ payment-service/
 │   │       ├── payment-repository.errors.ts
 │   │       ├── payment-repository.types.ts
 │   │       ├── repositories/
-│   │       │   ├── in-memory-payment.repository.ts
 │   │       │   └── json-payment.repository.ts
 │   │       ├── payment-gateway.types.ts
 │   │       ├── payment-worker.errors.ts
@@ -287,12 +286,9 @@ payment-service/
 │   ├── unit/
 │   │   ├── modules/
 │   │   │   └── payments/
-│   │   │       ├── in-memory-payment-repository.test.ts
 │   │   │       ├── payment-idempotency.test.ts
 │   │   │       ├── payment-mapper.test.ts
-│   │   │       ├── payment-state-machine.test.ts
-│   │   │       ├── payment-service.test.ts
-│   │   │       └── payment-worker.test.ts
+│   │   │       └── payment-state-machine.test.ts
 │   │   ├── infrastructure/
 │   │   │   ├── logger.test.ts
 │   │   │   └── simulated-payment-gateway.test.ts
@@ -307,11 +303,15 @@ payment-service/
 │   ├── integration/
 │   │   ├── atomic-file-writer.test.ts
 │   │   ├── payment-lifecycle.test.ts
+│   │   ├── payment-repository.test.ts
+│   │   ├── payment-service.test.ts
+│   │   ├── payment-worker.test.ts
 │   │   ├── startup-logging.test.ts
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
 │       ├── capture-logs.ts
+│       ├── create-test-payment-repository.ts
 │       ├── payment-fixtures.ts
 │       ├── request-app.ts
 │       └── scripted-payment-gateway.ts
@@ -513,7 +513,7 @@ The service reports ready only after storage validation, lease recovery, worker 
 
 ## Persistence
 
-The default repository stores payments and idempotency records in one versioned JSON document.
+The JSON repository is the only payment persistence implementation. It stores payments and idempotency records in one versioned JSON document. Repository, service, worker, and API tests use isolated temporary JSON files with automatic cleanup, exercising the same persistence code as the running service.
 
 Each mutation is serialized inside the process and persisted by:
 
