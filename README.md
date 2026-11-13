@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** architecture and delivery planning are complete; implementation has not started. Setup and run commands will be added when the Node.js project is initialized.
+> **Project status:** architecture, delivery planning, and the TypeScript tooling scaffold are complete. Payment-domain and runtime behavior have not been implemented yet.
 
 ## What this project demonstrates
 
@@ -31,6 +31,24 @@ The solution deliberately uses one Node.js process, an in-process worker, and JS
 - `helmet`
 - `express-rate-limit`
 - OpenAPI 3.1
+
+## Development tooling
+
+The project pins Node.js 24.14.0 in `.nvmrc` and npm 11.9.0 in `package.json`.
+
+Once dependencies are installed from the lockfile, the available quality commands are:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Watch the TypeScript server entry point during development. |
+| `npm run build` | Compile production TypeScript into `dist`. |
+| `npm start` | Run the compiled server entry point. |
+| `npm run typecheck` | Run strict TypeScript checks without emitting files. |
+| `npm run lint` | Run type-aware ESLint checks. |
+| `npm run format` | Format supported files with Prettier. |
+| `npm run format:check` | Check formatting without changing files. |
+| `npm test` | Run the Vitest suite once. |
+| `npm run test:watch` | Run Vitest in watch mode. |
 
 ## Project structure
 
