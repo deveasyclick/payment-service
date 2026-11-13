@@ -16,6 +16,7 @@ import { captureLogs } from '../../../helpers/capture-logs.js';
 
 const defaultWorkerOptions = {
   attemptTimeoutMs: 1_000,
+  leaseMs: 30_000,
   maxAttempts: 3,
   pollIntervalMs: 250,
   retryBaseDelayMs: 250,
@@ -47,7 +48,6 @@ describe('PaymentWorker', () => {
       clock,
       defaultWorkerOptions,
       () => 0,
-      undefined,
       logs.logger,
     );
 
@@ -97,7 +97,6 @@ describe('PaymentWorker', () => {
       clock,
       defaultWorkerOptions,
       () => 0,
-      undefined,
       logs.logger,
     );
 
@@ -220,12 +219,14 @@ describe('PaymentWorker', () => {
 
   it('does not overwrite an operator update with a late gateway result', async () => {
     const logs = captureLogs();
+    const enteredGateway = Promise.withResolvers<void>();
     let resolveGateway: ((result: PaymentGatewayResult) => void) | undefined;
     const repository = await createSeededRepository();
     const gateway: PaymentGateway = {
       processPayment: () =>
         new Promise<PaymentGatewayResult>((resolve) => {
           resolveGateway = resolve;
+          enteredGateway.resolve();
         }),
     };
     const worker = new PaymentWorker(
@@ -234,16 +235,11 @@ describe('PaymentWorker', () => {
       { now: () => new Date('2026-11-13T12:01:00.000Z') },
       defaultWorkerOptions,
       undefined,
-      undefined,
       logs.logger,
     );
     const processing = worker.processNextPayment();
 
-    await vi.waitFor(async () => {
-      expect(
-        (await repository.findPaymentById(buildPayment().id))?.status,
-      ).toBe('processing');
-    });
+    await enteredGateway.promise;
     const claimed = await repository.findPaymentById(buildPayment().id);
     expect(claimed).toBeDefined();
     if (claimed === undefined) {
@@ -296,7 +292,6 @@ describe('PaymentWorker', () => {
       { now: () => new Date('2026-11-13T12:01:00.000Z') },
       defaultWorkerOptions,
       () => 0,
-      undefined,
       logs.logger,
     );
 
@@ -368,5 +363,121 @@ describe('PaymentWorker', () => {
     await expect(stopping).resolves.toBe(false);
     expect(attemptSignal?.aborted).toBe(true);
     await expect(worker.stop()).resolves.toBe(true);
+  });
+
+  it('recovers a lease that expires after a quick restart without exceeding the attempt limit', async () => {
+    const repository = await createSeededRepository();
+    const start = new Date('2026-11-13T12:01:00.000Z');
+    await repository.claimNextDuePayment(start);
+    let now = new Date(start.getTime() + 1);
+    const gateway = new ScriptedPaymentGateway([]);
+    const worker = new PaymentWorker(
+      repository,
+      gateway,
+      { now: () => now },
+      { ...defaultWorkerOptions, maxAttempts: 1 },
+    );
+
+    expect(await worker.processNextPayment()).toBe(false);
+    now = new Date(start.getTime() + defaultWorkerOptions.leaseMs);
+    expect(await worker.processNextPayment()).toBe(false);
+    await expect(
+      repository.findPaymentById(buildPayment().id),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      failureCode: 'attempts_exhausted',
+      attemptCount: 1,
+    });
+    expect(gateway.contexts).toHaveLength(0);
+  });
+
+  it('stops a non-cooperative gateway without writing a retry after shutdown', async () => {
+    vi.useFakeTimers();
+    const repository = await createSeededRepository();
+    const gateway = new ScriptedPaymentGateway([
+      () => new Promise<PaymentGatewayResult>(() => undefined),
+    ]);
+    const worker = new PaymentWorker(
+      repository,
+      gateway,
+      { now: () => new Date('2026-11-13T12:01:00.000Z') },
+      { ...defaultWorkerOptions, shutdownTimeoutMs: 100 },
+    );
+    worker.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const stopping = worker.stop();
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(stopping).resolves.toBe(false);
+    await expect(worker.stop()).resolves.toBe(true);
+    await expect(
+      repository.findPaymentById(buildPayment().id),
+    ).resolves.toMatchObject({
+      status: 'processing',
+      attemptCount: 1,
+      version: 2,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(await worker.processNextPayment()).toBe(false);
+  });
+
+  it('does not start a gateway attempt if shutdown begins during a claim', async () => {
+    vi.useFakeTimers();
+    const repository = await createSeededRepository();
+    const originalClaim = repository.claimNextDuePayment.bind(repository);
+    const releaseClaim = Promise.withResolvers<void>();
+    vi.spyOn(repository, 'claimNextDuePayment').mockImplementation(
+      async (now) => {
+        await releaseClaim.promise;
+        return originalClaim(now);
+      },
+    );
+    const gateway = new ScriptedPaymentGateway([{ kind: 'succeeded' }]);
+    const worker = new PaymentWorker(
+      repository,
+      gateway,
+      { now: () => new Date('2026-11-13T12:01:00.000Z') },
+      defaultWorkerOptions,
+    );
+    worker.start();
+    await vi.advanceTimersByTimeAsync(0);
+    const stopping = worker.stop();
+    releaseClaim.resolve();
+    await expect(stopping).resolves.toBe(true);
+    expect(gateway.contexts).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('logs poll failures with the injected logger and continues polling', async () => {
+    vi.useFakeTimers();
+    const logs = captureLogs();
+    const repository = await createSeededRepository();
+    vi.spyOn(repository, 'claimNextDuePayment').mockRejectedValueOnce(
+      new Error('storage-secret'),
+    );
+    const worker = new PaymentWorker(
+      repository,
+      new ScriptedPaymentGateway([{ kind: 'succeeded' }]),
+      { now: () => new Date('2026-11-13T12:01:00.000Z') },
+      defaultWorkerOptions,
+      () => 0,
+      logs.logger,
+    );
+    worker.start();
+    await vi.advanceTimersByTimeAsync(defaultWorkerOptions.pollIntervalMs);
+    await worker.stop();
+    const failures = logs
+      .entries()
+      .filter((entry) => entry.event === 'payment_worker_poll_failed');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      event: 'payment_worker_poll_failed',
+      level: 50,
+      err: { type: 'Error' },
+    });
+    expect(logs.text()).not.toContain('storage-secret');
+    await expect(
+      repository.findPaymentById(buildPayment().id),
+    ).resolves.toMatchObject({ status: 'succeeded' });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

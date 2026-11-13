@@ -179,6 +179,7 @@ describe('InMemoryPaymentRepository', () => {
       repository.recoverExpiredPayments(
         new Date('2026-11-13T12:00:00.000Z'),
         30_000,
+        3,
       ),
     ).resolves.toBe(1);
     await expect(repository.findPaymentById(expired.id)).resolves.toEqual({

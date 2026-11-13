@@ -23,7 +23,6 @@ interface TestAppOptions {
   readonly mutationRateLimitMax?: number;
   readonly isReady?: () => boolean;
   readonly paymentService?: PaymentUseCases;
-  readonly reportUnexpectedError?: (error: unknown, requestId: string) => void;
 }
 
 async function createTestApp(options: TestAppOptions = {}): Promise<Express> {
@@ -48,9 +47,6 @@ async function createTestApp(options: TestAppOptions = {}): Promise<Express> {
     paymentService,
     ...(options.logger === undefined ? {} : { logger: options.logger }),
     ...(options.isReady === undefined ? {} : { isReady: options.isReady }),
-    ...(options.reportUnexpectedError === undefined
-      ? {}
-      : { reportUnexpectedError: options.reportUnexpectedError }),
   });
 }
 
@@ -352,7 +348,7 @@ describe('payment API', () => {
 
   it('returns a sanitized 500 and reports the internal error', async () => {
     const internalError = new Error('sensitive implementation detail');
-    const reportUnexpectedError = vi.fn();
+    const logs = captureLogs();
     const failingService: PaymentUseCases = {
       createPayment: () => Promise.reject(internalError),
       getPayment: () => Promise.reject(internalError),
@@ -360,7 +356,7 @@ describe('payment API', () => {
     };
     const app = await createTestApp({
       paymentService: failingService,
-      reportUnexpectedError,
+      logger: logs.logger,
     });
 
     const response = await request(app)
@@ -379,10 +375,12 @@ describe('payment API', () => {
     expect(JSON.stringify(response.body)).not.toContain(
       'sensitive implementation detail',
     );
-    expect(reportUnexpectedError).toHaveBeenCalledWith(
-      internalError,
-      expect.any(String),
-    );
+    const failure = logs
+      .entries()
+      .find((entry) => entry.event === 'http_unexpected_error');
+    expect(failure).toMatchObject({ path: '/payments', level: 50 });
+    expect(failure?.requestId).toBe(response.headers['x-request-id']);
+    expect(logs.text()).not.toContain('sensitive implementation detail');
   });
 
   it('uses the standard error envelope for unknown routes', async () => {

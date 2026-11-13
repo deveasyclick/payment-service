@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { loadConfig } from '../../src/config/index.js';
 import { getTestResponse } from '../helpers/request-app.js';
+import { captureLogs } from '../helpers/capture-logs.js';
 
 function createTestApp(isReady = true, environment: NodeJS.ProcessEnv = {}) {
   return createApp({
@@ -17,6 +18,41 @@ function createTestApp(isReady = true, environment: NodeJS.ProcessEnv = {}) {
 }
 
 describe('health and error routes', () => {
+  it('logs rejected requests and unexpected errors with path and request correlation', async () => {
+    const logs = captureLogs();
+    const app = createApp({
+      config: loadConfig({}),
+      logger: logs.logger,
+      paymentService: {
+        createPayment: vi.fn(),
+        updatePaymentStatus: vi.fn(),
+        getPayment: () => Promise.reject(new Error('internal-secret')),
+      },
+    });
+    const rejected = await getTestResponse(app, '/unknown?token=query-secret');
+    const failed = await getTestResponse(
+      app,
+      '/payments/7ccf50b4-1c73-44c9-97ae-c0fd218d18ec?token=query-secret',
+    );
+    expect(rejected.status).toBe(404);
+    expect(failed.status).toBe(500);
+    expect(logs.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'http_request_rejected',
+          code: 'ROUTE_NOT_FOUND',
+          path: '/unknown',
+          level: 40,
+        }),
+        expect.objectContaining({
+          event: 'http_unexpected_error',
+          path: '/payments/7ccf50b4-1c73-44c9-97ae-c0fd218d18ec',
+          level: 50,
+        }),
+      ]),
+    );
+    expect(logs.text()).not.toContain('-secret');
+  });
   it('serves /health as a public, rate-limit-exempt liveness alias, independently of readiness', async () => {
     const app = createTestApp(false, {
       API_KEY: 'health-test-api-key',

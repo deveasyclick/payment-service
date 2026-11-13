@@ -5,7 +5,16 @@ import { Duplex } from 'node:stream';
 import type { Express, Request, Response } from 'express';
 
 // Exercise the real Express stack over in-memory streams; no listening port is needed.
-export async function getTestResponse(app: Express, path: string) {
+export async function requestApp(
+  app: Express,
+  path: string,
+  options: {
+    method?: 'GET' | 'POST' | 'PATCH';
+    body?: unknown;
+    rawBody?: string;
+    headers?: Record<string, string>;
+  } = {},
+) {
   const chunks: Buffer[] = [];
   const stream = new Duplex({
     read() {},
@@ -16,9 +25,27 @@ export async function getTestResponse(app: Express, path: string) {
   });
   Object.assign(stream, { remoteAddress: '127.0.0.1' });
   const request = new IncomingMessage(stream as Socket);
-  request.method = 'GET';
+  request.method = options.method ?? 'GET';
   request.url = path;
-  request.headers = { host: 'localhost' };
+  request.headers = {
+    host: 'localhost',
+    ...Object.fromEntries(
+      Object.entries(options.headers ?? {}).map(([key, value]) => [
+        key.toLowerCase(),
+        value,
+      ]),
+    ),
+  };
+  const payload =
+    options.rawBody ??
+    (options.body === undefined ? undefined : JSON.stringify(options.body));
+  if (payload !== undefined) {
+    request.headers['content-type'] ??= 'application/json';
+    request.headers['content-length'] = String(Buffer.byteLength(payload));
+    request.push(Buffer.from(payload));
+  }
+  request.push(null);
+  request.complete = true;
   const response = new ServerResponse(request);
   response.assignSocket(stream as Socket);
   await new Promise<void>((resolve, reject) => {
@@ -34,4 +61,8 @@ export async function getTestResponse(app: Express, path: string) {
     headers: response.getHeaders(),
     body: raw.slice(bodyOffset),
   };
+}
+
+export async function getTestResponse(app: Express, path: string) {
+  return requestApp(app, path);
 }

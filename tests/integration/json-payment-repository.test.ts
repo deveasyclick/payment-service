@@ -60,6 +60,27 @@ describe('JsonPaymentRepository', () => {
     expect(await readdir(join(directory, 'nested'))).toEqual(['payments.json']);
   });
 
+  it.each(['constructor', 'toString', '__proto__'])(
+    'treats %s as a normal idempotency key across reloads',
+    async (key) => {
+      const repository = new JsonPaymentRepository({ filePath });
+      await repository.initialize();
+      const payment = buildPayment();
+      const record = buildIdempotencyRecord({ key });
+      await expect(
+        repository.findIdempotencyRecordByKey(key),
+      ).resolves.toBeUndefined();
+      await expect(
+        repository.createPayment(payment, record),
+      ).resolves.toMatchObject({ kind: 'created' });
+      const restarted = new JsonPaymentRepository({ filePath });
+      await restarted.initialize();
+      await expect(
+        restarted.createPayment(payment, record),
+      ).resolves.toMatchObject({ kind: 'replayed' });
+    },
+  );
+
   it('serializes concurrent versioned updates without losing data', async () => {
     const repository = new JsonPaymentRepository({ filePath });
     await repository.initialize();
@@ -160,6 +181,31 @@ describe('JsonPaymentRepository', () => {
     await expect(readFile(filePath, 'utf8')).resolves.toBe(malformed);
   });
 
+  it.each([
+    buildPayment({ status: 'processing', attemptCount: 1 }),
+    buildPayment({ status: 'failed' }),
+    buildPayment({
+      status: 'succeeded',
+      nextAttemptAt: '2026-11-13T12:01:00.000Z',
+    }),
+  ])(
+    'rejects inconsistent persisted payment state without replacing it',
+    async (payment) => {
+      await mkdir(join(directory, 'nested'), { recursive: true });
+      const contents = JSON.stringify({
+        schemaVersion: 1,
+        payments: { [payment.id]: payment },
+        idempotencyRecords: {},
+      });
+      await writeFile(filePath, contents);
+      const repository = new JsonPaymentRepository({ filePath });
+      await expect(repository.initialize()).rejects.toBeInstanceOf(
+        InvalidStorageDataError,
+      );
+      expect(await readFile(filePath, 'utf8')).toBe(contents);
+    },
+  );
+
   it('rejects an unsupported schema version without replacing it', async () => {
     const repository = new JsonPaymentRepository({ filePath });
     await repository.initialize();
@@ -189,6 +235,7 @@ describe('JsonPaymentRepository', () => {
       restartedRepository.recoverExpiredPayments(
         new Date('2026-11-13T12:01:00.000Z'),
         30_000,
+        3,
       ),
     ).resolves.toBe(1);
 
@@ -198,6 +245,7 @@ describe('JsonPaymentRepository', () => {
       { now: () => new Date('2026-11-13T12:01:00.000Z') },
       {
         attemptTimeoutMs: 1_000,
+        leaseMs: 30_000,
         maxAttempts: 3,
         pollIntervalMs: 250,
         retryBaseDelayMs: 250,
