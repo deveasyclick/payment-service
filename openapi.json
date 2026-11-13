@@ -1,0 +1,1092 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Payment Processing Service",
+    "version": "0.1.0",
+    "description": "Single-process assessment service with JSON persistence and an in-process asynchronous worker. amount is always integer minor units: 2500 NGN is 2,500 kobo (₦25.00). API_KEY authentication is required when configured and mandatory in production; local development may omit it. Payment responses omit internal scheduling fields. All responses carry X-Request-Id. JSON bodies are capped at 16 KiB. Unmatched routes return 404 ROUTE_NOT_FOUND using Error. General limits default to 100 requests per 15 minutes per client IP; mutation limits default to 20 requests per minute. Only explicitly configured proxy hops are trusted. See README.md for configuration and operating examples."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin as the hosted documentation, including the configured port."
+    }
+  ],
+  "security": [
+    {
+      "ApiKey": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Payments"
+    },
+    {
+      "name": "Health"
+    }
+  ],
+  "paths": {
+    "/payments": {
+      "post": {
+        "tags": ["Payments"],
+        "operationId": "createPayment",
+        "summary": "Create or replay a payment",
+        "description": "Persist a pending payment and return before gateway processing completes. New requests return 202; replays return 200 with the payment's current state (which may already be terminal). reference and Idempotency-Key are trimmed before hashing/comparison. Location is present for both outcomes.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePayment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Original payment returned for an identical normalized request.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimitPolicy"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              },
+              "Idempotent-Replayed": {
+                "description": "Present with value true on replay only.",
+                "schema": {
+                  "type": "string",
+                  "const": "true"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Payment"
+                },
+                "example": {
+                  "id": "7ccf50b4-1c73-44c9-97ae-c0fd218d18ec",
+                  "amount": 2500,
+                  "currency": "NGN",
+                  "reference": "order-123",
+                  "status": "succeeded",
+                  "attemptCount": 1,
+                  "createdAt": "2026-11-13T12:00:00.000Z",
+                  "updatedAt": "2026-11-13T12:00:00.000Z",
+                  "version": 3
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "New pending payment accepted for asynchronous processing.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimitPolicy"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Payment"
+                },
+                "example": {
+                  "id": "7ccf50b4-1c73-44c9-97ae-c0fd218d18ec",
+                  "amount": 2500,
+                  "currency": "NGN",
+                  "reference": "order-123",
+                  "status": "pending",
+                  "attemptCount": 0,
+                  "createdAt": "2026-11-13T12:00:00.000Z",
+                  "updatedAt": "2026-11-13T12:00:00.000Z",
+                  "version": 1
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/IdempotencyConflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/payments/{id}": {
+      "get": {
+        "tags": ["Payments"],
+        "operationId": "getPayment",
+        "summary": "Retrieve a payment",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/PaymentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current payment representation.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimitPolicy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Payment"
+                },
+                "example": {
+                  "id": "7ccf50b4-1c73-44c9-97ae-c0fd218d18ec",
+                  "amount": 2500,
+                  "currency": "NGN",
+                  "reference": "order-123",
+                  "status": "succeeded",
+                  "attemptCount": 1,
+                  "createdAt": "2026-11-13T12:00:00.000Z",
+                  "updatedAt": "2026-11-13T12:00:00.000Z",
+                  "version": 3
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/payments/{id}/status": {
+      "patch": {
+        "tags": ["Payments"],
+        "operationId": "updatePaymentStatus",
+        "summary": "Finalize a pending or processing payment",
+        "description": "Operator override. This API has no separate operator role; the same configured API key authorizes this endpoint. Read the latest version first. An active worker can change the version between GET and PATCH. Terminal payments cannot be reopened, including repeating the same terminal status.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/PaymentId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePaymentStatus"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "RateLimit": {
+                "$ref": "#/components/headers/RateLimit"
+              },
+              "RateLimit-Policy": {
+                "$ref": "#/components/headers/RateLimitPolicy"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Payment"
+                },
+                "example": {
+                  "id": "7ccf50b4-1c73-44c9-97ae-c0fd218d18ec",
+                  "amount": 2500,
+                  "currency": "NGN",
+                  "reference": "order-123",
+                  "status": "failed",
+                  "attemptCount": 0,
+                  "createdAt": "2026-11-13T12:00:00.000Z",
+                  "updatedAt": "2026-11-13T12:00:00.000Z",
+                  "version": 2,
+                  "failureCode": "cancelled_by_operator"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/InvalidTransition"
+          },
+          "412": {
+            "$ref": "#/components/responses/StaleVersion"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getLiveness",
+        "summary": "Check process liveness",
+        "security": [],
+        "description": "Public and excluded from rate limiting. Does not inspect storage.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Process is running.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getReadiness",
+        "summary": "Check startup readiness",
+        "security": [],
+        "description": "Public and excluded from rate limiting. Ready after storage initialization/recovery, worker startup, and HTTP listening; false when shutdown begins. This is a lifecycle check, not a continuous disk-write probe.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service startup completed.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ready"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                "example": {
+                  "status": "ready"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/NotReady"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "operationId": "getHealth",
+        "summary": "Check process liveness (alias)",
+        "security": [],
+        "description": "Alias of GET /health/live. Public, excluded from rate limiting, and independent of readiness.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Process is running.",
+            "headers": {
+              "X-Request-Id": {
+                "$ref": "#/components/headers/RequestId"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "ok"
+                    }
+                  },
+                  "required": ["status"]
+                },
+                "example": {
+                  "status": "ok"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Configured API_KEY, at least 16 characters. Required in production. Authentication is disabled locally if API_KEY is empty or absent."
+      }
+    },
+    "parameters": {
+      "RequestId": {
+        "name": "X-Request-Id",
+        "in": "header",
+        "required": false,
+        "description": "Optional correlation ID. Invalid values are replaced with a generated UUID rather than rejected.",
+        "schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        }
+      },
+      "PaymentId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/PaymentId"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/IdempotencyKey"
+        }
+      }
+    },
+    "headers": {
+      "RequestId": {
+        "description": "Validated incoming correlation ID or a generated UUID, including on errors.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Location": {
+        "description": "Relative URL for the created or replayed payment.",
+        "schema": {
+          "type": "string"
+        },
+        "example": "/payments/7ccf50b4-1c73-44c9-97ae-c0fd218d18ec"
+      },
+      "RateLimit": {
+        "description": "Draft-8 rate-limit field. May contain general and mutation policy values. Present when the corresponding limiter runs; early parsing failures and health checks omit it.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "RateLimitPolicy": {
+        "description": "Draft-8 quota/window policy metadata. May contain multiple policies. Limits are configurable and process-local.",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "CreatePayment": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 999999999999,
+            "description": "Integer count of the currency's minor unit. For NGN, amount 2500 means 2,500 kobo (₦25.00), not ₦2,500."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Trimmed before validation and idempotency hashing; empty after trimming is rejected."
+          }
+        },
+        "required": ["amount", "currency"],
+        "additionalProperties": false,
+        "description": "Strict JSON object. Unknown fields are rejected. Currency is three uppercase ASCII letters; no ISO currency registry or exponent conversion is enforced.",
+        "examples": [
+          {
+            "amount": 2500,
+            "currency": "NGN",
+            "reference": "order-123"
+          }
+        ]
+      },
+      "UpdatePaymentStatus": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "succeeded"
+              },
+              "expectedVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["status", "expectedVersion"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "const": "failed"
+              },
+              "expectedVersion": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "failureCode": {
+                "type": "string",
+                "enum": [
+                  "provider_declined",
+                  "processing_error",
+                  "processing_timeout",
+                  "attempts_exhausted",
+                  "cancelled_by_operator"
+                ]
+              }
+            },
+            "required": ["status", "expectedVersion", "failureCode"],
+            "additionalProperties": false
+          }
+        ],
+        "description": "Operator override from pending or processing to succeeded or failed. Terminal states cannot change. expectedVersion must match the current payment version; failureCode is required only for failed.",
+        "examples": [
+          {
+            "status": "succeeded",
+            "expectedVersion": 1
+          },
+          {
+            "status": "failed",
+            "expectedVersion": 1,
+            "failureCode": "cancelled_by_operator"
+          }
+        ]
+      },
+      "IdempotencyKey": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[\\x20-\\x7E]+$",
+        "description": "Trimmed before validation. One to 128 printable ASCII characters after trimming. Reuse with the same normalized create payload replays the existing payment; a different payload conflicts."
+      },
+      "PaymentId": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      },
+      "Payment": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Public payment. Internal nextAttemptAt and processingStartedAt fields are never exposed.",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/PaymentId"
+          },
+          "amount": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 999999999999,
+            "description": "Integer count of the currency's minor unit. For NGN, amount 2500 means 2,500 kobo (₦25.00), not ₦2,500."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "reference": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "processing", "succeeded", "failed"]
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failureCode": {
+            "type": "string",
+            "enum": [
+              "provider_declined",
+              "processing_error",
+              "processing_timeout",
+              "attempts_exhausted",
+              "cancelled_by_operator"
+            ],
+            "description": "Present on terminal failed payments."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Monotonically increasing version. Supply the latest value as expectedVersion when changing status."
+          }
+        },
+        "required": [
+          "id",
+          "amount",
+          "currency",
+          "status",
+          "attemptCount",
+          "createdAt",
+          "updatedAt",
+          "version"
+        ],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              },
+              "required": ["status"]
+            },
+            "then": {
+              "required": ["failureCode"]
+            },
+            "else": {
+              "not": {
+                "required": ["failureCode"]
+              }
+            }
+          }
+        ],
+        "examples": [
+          {
+            "id": "7ccf50b4-1c73-44c9-97ae-c0fd218d18ec",
+            "amount": 2500,
+            "currency": "NGN",
+            "reference": "order-123",
+            "status": "pending",
+            "attemptCount": 0,
+            "createdAt": "2026-11-13T12:00:00.000Z",
+            "updatedAt": "2026-11-13T12:00:00.000Z",
+            "version": 1
+          }
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "message", "path", "requestId"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "VALIDATION_ERROR",
+                  "INVALID_JSON",
+                  "UNAUTHORIZED",
+                  "PAYMENT_NOT_FOUND",
+                  "ROUTE_NOT_FOUND",
+                  "IDEMPOTENCY_CONFLICT",
+                  "INVALID_PAYMENT_TRANSITION",
+                  "PAYMENT_VERSION_CONFLICT",
+                  "RATE_LIMIT_EXCEEDED",
+                  "PAYLOAD_TOO_LARGE",
+                  "SERVICE_NOT_READY",
+                  "INTERNAL_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "details": {
+                "type": "array",
+                "description": "Validation issues only; absent for other errors.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["path", "message"],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "path": {
+                "type": "string",
+                "description": "Original request pathname, including mounted route prefixes, without the query string.",
+                "examples": ["/payments/not-a-uuid"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed JSON or request validation failure (VALIDATION_ERROR or INVALID_JSON). JSON bodies are limited to 16 KiB; validation rejects unknown fields.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed",
+                "requestId": "request-123",
+                "details": [
+                  {
+                    "path": "amount",
+                    "message": "Invalid input"
+                  }
+                ],
+                "path": "/payments"
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "X-API-Key is missing or invalid when API_KEY is configured.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "UNAUTHORIZED",
+                "message": "A valid API key is required",
+                "requestId": "request-123",
+                "path": "/payments"
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No payment exists with this UUID.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "PAYMENT_NOT_FOUND",
+                "message": "Payment not found",
+                "requestId": "request-123",
+                "path": "/payments/7ccf50b4-1c73-44c9-97ae-c0fd218d18ec"
+              }
+            }
+          }
+        }
+      },
+      "RouteNotFound": {
+        "description": "An unmatched route returns this envelope. Middleware may first reject malformed bodies or excessive traffic.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "ROUTE_NOT_FOUND",
+                "message": "Route not found",
+                "requestId": "request-123",
+                "path": "/unknown-route"
+              }
+            }
+          }
+        }
+      },
+      "IdempotencyConflict": {
+        "description": "The trimmed idempotency key was already used with a different normalized payload.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "IDEMPOTENCY_CONFLICT",
+                "message": "Idempotency key was already used with a different payment request",
+                "requestId": "request-123",
+                "path": "/payments"
+              }
+            }
+          }
+        }
+      },
+      "InvalidTransition": {
+        "description": "Only pending or processing payments can be finalized; terminal states cannot change.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "INVALID_PAYMENT_TRANSITION",
+                "message": "Payment transition is not allowed",
+                "requestId": "request-123",
+                "path": "/payments/7ccf50b4-1c73-44c9-97ae-c0fd218d18ec/status"
+              }
+            }
+          }
+        }
+      },
+      "StaleVersion": {
+        "description": "expectedVersion differs from the current payment version. Retrieve the payment and reconsider the update.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "PAYMENT_VERSION_CONFLICT",
+                "message": "Payment version does not match",
+                "requestId": "request-123",
+                "path": "/payments/7ccf50b4-1c73-44c9-97ae-c0fd218d18ec/status"
+              }
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "JSON request body exceeds 16 KiB.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "PAYLOAD_TOO_LARGE",
+                "message": "Request body is too large",
+                "requestId": "request-123",
+                "path": "/payments"
+              }
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "A general or mutation-specific per-IP limit was exceeded. Retry-After is in seconds.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          },
+          "Retry-After": {
+            "description": "Seconds until the exceeded rate-limit window resets.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": "Too many requests",
+                "requestId": "request-123",
+                "path": "/payments"
+              }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Unexpected internal failure. Internal details are logged with request correlation and never returned.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "RateLimit": {
+            "$ref": "#/components/headers/RateLimit"
+          },
+          "RateLimit-Policy": {
+            "$ref": "#/components/headers/RateLimitPolicy"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "requestId": "request-123",
+                "path": "/payments"
+              }
+            }
+          }
+        }
+      },
+      "NotReady": {
+        "description": "Startup has not completed or shutdown has begun.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/RequestId"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "SERVICE_NOT_READY",
+                "message": "Service is not ready",
+                "requestId": "request-123",
+                "path": "/health/ready"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -107,3 +107,13 @@ export function parseUpdatePaymentStatusCommand(
 ): UpdatePaymentStatusCommand {
   return updatePaymentStatusCommandSchema.parse(command);
 }
+
+// Used by contract tests to keep the checked-in OpenAPI schemas aligned with validation.
+export function getPaymentRequestJsonSchemas() {
+  return {
+    CreatePayment: z.toJSONSchema(createPaymentBodySchema),
+    UpdatePaymentStatus: z.toJSONSchema(updatePaymentStatusBodySchema),
+    IdempotencyKey: z.toJSONSchema(idempotencyKeySchema),
+    PaymentId: z.toJSONSchema(paymentIdSchema),
+  };
+}
