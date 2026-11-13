@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** architecture, tooling, configuration validation, payment-domain rules, atomic JSON persistence, and payment application use cases are complete. Background processing and HTTP runtime behavior have not been implemented yet.
+> **Project status:** configuration, payment-domain rules, atomic JSON persistence, application use cases, and the secured Express API are complete. Background processing and the listening server lifecycle have not been implemented yet.
 
 ## What this project demonstrates
 
@@ -71,7 +71,9 @@ payment-service/
 │   ├── modules/
 │   │   └── payments/
 │   │       ├── payment.const.ts
+│   │       ├── payment.controller.ts
 │   │       ├── payment.errors.ts
+│   │       ├── payment-http.types.ts
 │   │       ├── payment-idempotency.ts
 │   │       ├── payment.types.ts
 │   │       ├── payment.schemas.ts
@@ -107,8 +109,8 @@ payment-service/
 │   │   └── validate.ts
 │   └── shared/
 │       ├── errors/
-│       │   ├── application-error.ts
-│       │   └── configuration.errors.ts
+│       │   ├── configuration.errors.ts
+│       │   └── http.errors.ts
 │       ├── helpers/
 │       │   ├── clock.ts
 │       │   ├── id-generator.ts
@@ -116,6 +118,7 @@ payment-service/
 │       └── types/
 │           ├── clock.types.ts
 │           ├── config.types.ts
+│           ├── http.types.ts
 │           └── id-generator.types.ts
 ├── tests/
 │   ├── unit/
@@ -212,7 +215,7 @@ pending ----------------------------> processing
 - `succeeded` and `failed` are terminal and cannot be reopened.
 - An operator status update may finalize a `pending` or `processing` payment as `succeeded` or `failed`.
 
-## Proposed API
+## REST API
 
 All request and response bodies use JSON. Successful responses include an `X-Request-Id` header for correlation.
 

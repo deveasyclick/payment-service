@@ -16,6 +16,7 @@ import {
 import type {
   CreatePaymentCommand,
   CreatePaymentOutcome,
+  PaymentUseCases,
   UpdatePaymentStatusCommand,
 } from './payment-service.types.js';
 import { assertPaymentTransitionAllowed } from './payment.state-machine.js';
@@ -23,7 +24,7 @@ import type { Payment, PublicPayment } from './payment.types.js';
 import type { Clock } from '../../shared/types/clock.types.js';
 import type { IdGenerator } from '../../shared/types/id-generator.types.js';
 
-export class PaymentService {
+export class PaymentService implements PaymentUseCases {
   constructor(
     private readonly repository: PaymentRepository,
     private readonly clock: Clock,

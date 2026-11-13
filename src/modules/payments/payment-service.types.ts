@@ -7,6 +7,8 @@ export interface CreatePaymentCommand {
   readonly idempotencyKey: string;
 }
 
+export type CreatePaymentBody = Omit<CreatePaymentCommand, 'idempotencyKey'>;
+
 export interface NormalizedCreatePaymentRequest {
   readonly amount: number;
   readonly currency: string;
@@ -31,3 +33,23 @@ export type UpdatePaymentStatusCommand =
       readonly expectedVersion: number;
       readonly failureCode: PaymentFailureCode;
     };
+
+export type UpdatePaymentStatusBody =
+  | {
+      readonly status: 'succeeded';
+      readonly expectedVersion: number;
+      readonly failureCode?: never;
+    }
+  | {
+      readonly status: 'failed';
+      readonly expectedVersion: number;
+      readonly failureCode: PaymentFailureCode;
+    };
+
+export interface PaymentUseCases {
+  createPayment(command: CreatePaymentCommand): Promise<CreatePaymentOutcome>;
+  getPayment(paymentId: string): Promise<PublicPayment>;
+  updatePaymentStatus(
+    command: UpdatePaymentStatusCommand,
+  ): Promise<PublicPayment>;
+}

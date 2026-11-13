@@ -56,7 +56,9 @@ payment-service/
 │   ├── modules/
 │   │   └── payments/
 │   │       ├── payment.const.ts
+│   │       ├── payment.controller.ts
 │   │       ├── payment.errors.ts
+│   │       ├── payment-http.types.ts
 │   │       ├── payment-idempotency.ts
 │   │       ├── payment.types.ts
 │   │       ├── payment.schemas.ts
@@ -92,8 +94,8 @@ payment-service/
 │   │   └── validate.ts
 │   └── shared/
 │       ├── errors/
-│       │   ├── application-error.ts
-│       │   └── configuration.errors.ts
+│       │   ├── configuration.errors.ts
+│       │   └── http.errors.ts
 │       ├── helpers/
 │       │   ├── clock.ts
 │       │   ├── id-generator.ts
@@ -101,6 +103,7 @@ payment-service/
 │       └── types/
 │           ├── clock.types.ts
 │           ├── config.types.ts
+│           ├── http.types.ts
 │           └── id-generator.types.ts
 ├── tests/
 │   ├── unit/
