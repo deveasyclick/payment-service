@@ -1,5 +1,7 @@
 import express, { type Express } from 'express';
 import helmet from 'helmet';
+import { createLogger } from './infrastructure/logging/logger.js';
+import { createRequestLoggingMiddleware } from './middleware/request-logging.js';
 
 import { createAuthenticationMiddleware } from './middleware/authenticate.js';
 import { createErrorHandler } from './middleware/error-handler.js';
@@ -25,6 +27,8 @@ export function createApp(dependencies: AppDependencies): Express {
   }
 
   app.use(requestIdMiddleware());
+  const logger = dependencies.logger ?? createLogger('silent');
+  app.use(createRequestLoggingMiddleware(logger));
   app.use(helmet());
 
   app.get('/health/live', (_request, response) => {
@@ -53,7 +57,17 @@ export function createApp(dependencies: AppDependencies): Express {
   app.use((_request, _response, next) => {
     next(new RouteNotFoundError());
   });
-  app.use(createErrorHandler(dependencies.reportUnexpectedError));
+  app.use(
+    createErrorHandler(
+      dependencies.reportUnexpectedError ??
+        ((error, requestId) => {
+          logger.error(
+            { event: 'http_unexpected_error', err: error, requestId },
+            'Unexpected HTTP error',
+          );
+        }),
+    ),
+  );
 
   return app;
 }

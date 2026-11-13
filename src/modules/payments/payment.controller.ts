@@ -24,6 +24,15 @@ export class PaymentController {
       idempotencyKey,
     });
 
+    request.log.info(
+      {
+        event: result.replayed ? 'payment_replayed' : 'payment_created',
+        paymentId: result.payment.id,
+        version: result.payment.version,
+      },
+      result.replayed ? 'Payment replayed' : 'Payment created',
+    );
+
     response.location(`/payments/${result.payment.id}`);
 
     if (result.replayed) {
@@ -41,6 +50,10 @@ export class PaymentController {
   ) => {
     const paymentId = parsePaymentId(request.params.id);
     const payment = await this.paymentService.getPayment(paymentId);
+    request.log.info(
+      { event: 'payment_retrieved', paymentId },
+      'Payment retrieved',
+    );
     response.status(200).json(payment);
   };
 
@@ -55,6 +68,15 @@ export class PaymentController {
       ...body,
       paymentId,
     });
+    request.log.info(
+      {
+        event: 'payment_status_updated',
+        paymentId,
+        status: payment.status,
+        version: payment.version,
+      },
+      'Payment status updated',
+    );
     response.status(200).json(payment);
   };
 }

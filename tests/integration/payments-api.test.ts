@@ -1,4 +1,5 @@
 import type { Express } from 'express';
+import type { Logger } from 'pino';
 import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -9,12 +10,14 @@ import { PaymentService } from '../../src/modules/payments/payment.service.js';
 import { InMemoryPaymentRepository } from '../../src/modules/payments/repositories/in-memory-payment.repository.js';
 import type { Clock } from '../../src/shared/types/clock.types.js';
 import type { IdGenerator } from '../../src/shared/types/id-generator.types.js';
+import { captureLogs } from '../helpers/capture-logs.js';
 
 const apiKey = 'test-api-key-1234';
 const firstPaymentId = '7ccf50b4-1c73-44c9-97ae-c0fd218d18ec';
 const missingPaymentId = '1351bb54-e5f2-42ee-8ef0-d2cc31b61cf8';
 
 interface TestAppOptions {
+  readonly logger?: Logger;
   readonly authenticated?: boolean;
   readonly generalRateLimitMax?: number;
   readonly mutationRateLimitMax?: number;
@@ -43,6 +46,7 @@ async function createTestApp(options: TestAppOptions = {}): Promise<Express> {
   return createApp({
     config,
     paymentService,
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
     ...(options.isReady === undefined ? {} : { isReady: options.isReady }),
     ...(options.reportUnexpectedError === undefined
       ? {}
@@ -51,6 +55,73 @@ async function createTestApp(options: TestAppOptions = {}): Promise<Express> {
 }
 
 describe('payment API', () => {
+  it('correlates creation and replay without logging headers, bodies, or query values', async () => {
+    const logs = captureLogs();
+    const app = await createTestApp({ logger: logs.logger });
+    const create = () =>
+      request(app)
+        .post('/payments?token=query-secret')
+        .set('X-API-Key', apiKey)
+        .set('Authorization', 'auth-secret')
+        .set('X-Request-Id', 'request-log-123')
+        .set('Idempotency-Key', 'idempotency-secret')
+        .send({ amount: 2_500, currency: 'NGN', reference: 'body-secret' });
+
+    expect((await create()).status).toBe(202);
+    expect((await create()).status).toBe(200);
+    expect(logs.text()).not.toContain('-secret');
+    expect(logs.text()).not.toContain(apiKey);
+    expect(logs.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'payment_created',
+          paymentId: firstPaymentId,
+          requestId: 'request-log-123',
+        }),
+        expect.objectContaining({
+          event: 'payment_replayed',
+          paymentId: firstPaymentId,
+          requestId: 'request-log-123',
+        }),
+        expect.objectContaining({
+          event: 'http_request_completed',
+          requestId: 'request-log-123',
+        }),
+      ]),
+    );
+  });
+
+  it('logs unexpected failures with request context and returns a sanitized response', async () => {
+    const logs = captureLogs();
+    const app = await createTestApp({
+      logger: logs.logger,
+      paymentService: {
+        createPayment: vi.fn(),
+        updatePaymentStatus: vi.fn(),
+        getPayment: () => Promise.reject(new Error('database-secret')),
+      },
+    });
+    const response = await request(app)
+      .get(`/payments/${firstPaymentId}`)
+      .set('X-API-Key', apiKey)
+      .set('X-Request-Id', 'failed-request-123');
+
+    expect(response.status).toBe(500);
+    expect(response.body as unknown).toMatchObject({
+      error: { code: 'INTERNAL_ERROR', requestId: 'failed-request-123' },
+    });
+    expect(JSON.stringify(response.body)).not.toContain('database-secret');
+    expect(logs.text()).not.toContain('database-secret');
+    expect(logs.entries()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: 'http_unexpected_error',
+          requestId: 'failed-request-123',
+          level: 50,
+        }),
+      ]),
+    );
+  });
   it('creates and retrieves a pending payment', async () => {
     const app = await createTestApp();
 

@@ -1,4 +1,5 @@
 import type { AppConfig } from './config.types.js';
+import type { Logger } from 'pino';
 import type { PaymentUseCases } from '../../modules/payments/payment-service.types.js';
 
 export type UnexpectedErrorReporter = (
@@ -7,6 +8,7 @@ export type UnexpectedErrorReporter = (
 ) => void;
 
 export interface AppDependencies {
+  readonly logger?: Logger;
   readonly config: AppConfig;
   readonly paymentService: PaymentUseCases;
   readonly isReady?: () => boolean;
