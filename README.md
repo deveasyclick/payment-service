@@ -4,6 +4,28 @@ A small, production-minded payment-processing microservice designed for a Node.j
 
 > **Project status:** implementation and delivery polish are complete. Local verification passes 143 tests; the full socket-based API suite, clean dependency installation, and registry audit still require an unrestricted local/CI run. See [verification results](./docs/VERIFICATION.md).
 
+## Table of contents
+
+- [What this project demonstrates](#what-this-project-demonstrates)
+- [Stack](#stack)
+- [Development tooling](#development-tooling)
+- [Run locally](#run-locally)
+- [Configuration](#configuration)
+- [Exercise the payment flow](#exercise-the-payment-flow)
+- [API contract](#api-contract)
+- [Project structure](#project-structure)
+- [Payment model](#payment-model)
+- [Payment lifecycle](#payment-lifecycle)
+- [REST API](#rest-api)
+- [Error responses](#error-responses)
+- [Asynchronous processing](#asynchronous-processing)
+- [Persistence](#persistence)
+- [Security controls](#security-controls)
+- [Logging and observability](#logging-and-observability)
+- [Testing approach](#testing-approach)
+- [Known limitations](#known-limitations)
+- [Project documents](#project-documents)
+
 ## What this project demonstrates
 
 - Idempotent payment creation

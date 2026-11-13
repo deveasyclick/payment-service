@@ -1,5 +1,23 @@
 # Payment Service Architecture
 
+## Table of contents
+
+- [1. Goals and scope](#1-goals-and-scope)
+- [2. Proposed runtime structure](#2-proposed-runtime-structure)
+- [3. Domain model](#3-domain-model)
+- [4. Payment state machine](#4-payment-state-machine)
+- [5. HTTP API contract](#5-http-api-contract)
+- [6. Validation and bounds](#6-validation-and-bounds)
+- [7. Persistence and consistency](#7-persistence-and-consistency)
+- [8. Asynchronous processing, retries, and recovery](#8-asynchronous-processing-retries-and-recovery)
+- [9. Concurrency model](#9-concurrency-model)
+- [10. Security](#10-security)
+- [11. Logging and observability](#11-logging-and-observability)
+- [12. Configuration and lifecycle](#12-configuration-and-lifecycle)
+- [13. Testing strategy](#13-testing-strategy)
+- [14. API documentation](#14-api-documentation)
+- [15. Explicit tradeoffs and limitations](#15-explicit-tradeoffs-and-limitations)
+
 ## 1. Goals and scope
 
 This service accepts payment intents, exposes their current state, permits an explicit status update, and processes new payments asynchronously. It is intentionally a **single Node.js process** with JSON-file persistence and an in-process worker. The design still gives clear answers for duplicate requests, restarts, retries, concurrent updates, invalid state transitions, and corrupt storage.
