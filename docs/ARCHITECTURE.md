@@ -88,7 +88,6 @@ payment-service/
 │   │       ├── payment-repository.errors.ts
 │   │       ├── payment-repository.types.ts
 │   │       ├── repositories/
-│   │       │   ├── in-memory-payment.repository.ts
 │   │       │   └── json-payment.repository.ts
 │   │       ├── payment-gateway.types.ts
 │   │       ├── payment-worker.errors.ts
@@ -135,12 +134,9 @@ payment-service/
 │   ├── unit/
 │   │   ├── modules/
 │   │   │   └── payments/
-│   │   │       ├── in-memory-payment-repository.test.ts
 │   │   │       ├── payment-idempotency.test.ts
 │   │   │       ├── payment-mapper.test.ts
-│   │   │       ├── payment-state-machine.test.ts
-│   │   │       ├── payment-service.test.ts
-│   │   │       └── payment-worker.test.ts
+│   │   │       └── payment-state-machine.test.ts
 │   │   ├── infrastructure/
 │   │   │   ├── logger.test.ts
 │   │   │   └── simulated-payment-gateway.test.ts
@@ -155,11 +151,15 @@ payment-service/
 │   ├── integration/
 │   │   ├── atomic-file-writer.test.ts
 │   │   ├── payment-lifecycle.test.ts
+│   │   ├── payment-repository.test.ts
+│   │   ├── payment-service.test.ts
+│   │   ├── payment-worker.test.ts
 │   │   ├── startup-logging.test.ts
 │   │   ├── payments-api.test.ts
 │   │   └── json-payment-repository.test.ts
 │   └── helpers/
 │       ├── capture-logs.ts
+│       ├── create-test-payment-repository.ts
 │       ├── payment-fixtures.ts
 │       ├── request-app.ts
 │       └── scripted-payment-gateway.ts
@@ -385,7 +385,7 @@ Persistence behavior:
 5. Publish the new in-memory snapshot only after the durable write succeeds.
 6. Surface write failures to the request/worker and log them with context.
 
-The file is excluded from Git. The data directory is created on startup. Tests use an isolated temporary directory or an in-memory repository implementing the same interface.
+The file is excluded from Git. The data directory is created on startup. JSON is the only payment persistence implementation. Repository, service, worker, and API tests use isolated temporary JSON files with automatic cleanup. Pure domain tests remain independent of storage. Keeping one implementation reduces maintenance and exercises the production persistence behavior throughout integration tests.
 
 Startup validation checks state-specific requirements: processing payments require a lease timestamp and a started attempt, failed payments require a failure code, and retry timestamps are allowed only for pending payments. Idempotency keys use own-property lookups and entry-based validation so printable keys such as `constructor` and `__proto__` cannot collide with object prototypes or disappear during parsing.
 
@@ -497,9 +497,12 @@ Vitest and Supertest will cover behavior rather than implementation details.
 - State-machine allowed and forbidden transitions.
 - Money/currency/request validation boundaries.
 - Idempotency hash normalization and conflict behavior.
-- Retry classification, backoff, exhaustion, timeout, and terminal outcomes with fake timers/a scripted gateway.
+
+### Persistence and service integration tests
+
 - Repository compare-and-set behavior and serialized concurrent mutations.
 - JSON repository restart persistence, atomic-write failure behavior, and corrupt-file startup failure.
+- Payment service creation, retrieval, idempotency, status updates, and concurrent operator updates against temporary JSON files.
 
 ### API integration tests
 
@@ -513,6 +516,8 @@ Vitest and Supertest will cover behavior rather than implementation details.
 
 ### Worker integration tests
 
+- Retry classification, backoff, exhaustion, timeout, and terminal outcomes with fake timers and a scripted gateway against the JSON repository.
+- Tests wait for explicit claim/gateway events before advancing fake timers so filesystem timing cannot change the outcome.
 - HTTP creation returns before delayed provider completion.
 - A payment eventually succeeds.
 - Transient failures retry and exhausted/permanent failures terminate.

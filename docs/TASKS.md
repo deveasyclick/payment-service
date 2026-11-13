@@ -60,7 +60,7 @@ The milestones below are intentionally sequential. Each should leave the reposit
 **Work**
 
 - Define the payment repository contract, including atomic create-with-idempotency, due-work claim, and versioned updates.
-- Add an in-memory repository for focused tests.
+- Use the JSON repository with isolated temporary files in tests; keep one payment persistence implementation.
 - Add the versioned JSON-file repository with startup validation, serialized mutations, temporary-file write, flush, and atomic rename.
 - Handle unsupported/corrupt storage without destroying it.
 
