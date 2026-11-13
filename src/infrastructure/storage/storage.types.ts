@@ -1,0 +1,21 @@
+import type {
+  IdempotencyRecord,
+  Payment,
+} from '../../modules/payments/payment.types.js';
+import type { STORAGE_SCHEMA_VERSION } from './storage.const.js';
+
+export interface StorageDocument {
+  readonly schemaVersion: typeof STORAGE_SCHEMA_VERSION;
+  readonly payments: Readonly<Record<string, Payment>>;
+  readonly idempotencyRecords: Readonly<Record<string, IdempotencyRecord>>;
+}
+
+export type AtomicFileWriter = (
+  filePath: string,
+  contents: string,
+) => Promise<void>;
+
+export interface JsonPaymentRepositoryOptions {
+  readonly filePath: string;
+  readonly writeFileAtomically?: AtomicFileWriter;
+}
