@@ -18,6 +18,7 @@ const defaultWorkerOptions = {
   maxAttempts: 3,
   pollIntervalMs: 250,
   retryBaseDelayMs: 250,
+  shutdownTimeoutMs: 500,
 } as const;
 
 async function createSeededRepository(): Promise<InMemoryPaymentRepository> {
@@ -249,5 +250,36 @@ describe('PaymentWorker', () => {
       repository.findPaymentById(buildPayment().id),
     ).resolves.toMatchObject({ status: 'succeeded' });
     expect(gateway.contexts).toHaveLength(1);
+  });
+
+  it('aborts active gateway work after the shutdown deadline', async () => {
+    vi.useFakeTimers();
+    const repository = await createSeededRepository();
+    let attemptSignal: AbortSignal | undefined;
+    const gateway: PaymentGateway = {
+      processPayment: (_payment, context) => {
+        attemptSignal = context.signal;
+        return new Promise<PaymentGatewayResult>((_resolve, reject) => {
+          context.signal.addEventListener('abort', () => {
+            reject(new Error('gateway attempt aborted'));
+          });
+        });
+      },
+    };
+    const worker = new PaymentWorker(
+      repository,
+      gateway,
+      { now: () => new Date('2026-11-13T12:01:00.000Z') },
+      { ...defaultWorkerOptions, shutdownTimeoutMs: 100 },
+    );
+    worker.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    const stopping = worker.stop();
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(stopping).resolves.toBe(false);
+    expect(attemptSignal?.aborted).toBe(true);
+    await expect(worker.stop()).resolves.toBe(true);
   });
 });

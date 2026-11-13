@@ -23,6 +23,7 @@ describe('loadConfig', () => {
         maxAttempts: 3,
         pollIntervalMs: 250,
         retryBaseDelayMs: 250,
+        shutdownTimeoutMs: 10_000,
       },
     });
   });

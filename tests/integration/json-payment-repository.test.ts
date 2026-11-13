@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { writeFileAtomically } from '../../src/infrastructure/storage/atomic-file-writer.js';
 import { JsonPaymentRepository } from '../../src/modules/payments/repositories/json-payment.repository.js';
+import { PaymentWorker } from '../../src/modules/payments/payment.worker.js';
 import {
   InvalidStorageDataError,
   UnsupportedStorageVersionError,
@@ -22,6 +23,7 @@ import {
   buildIdempotencyRecord,
   buildPayment,
 } from '../helpers/payment-fixtures.js';
+import { ScriptedPaymentGateway } from '../helpers/scripted-payment-gateway.js';
 
 describe('JsonPaymentRepository', () => {
   let directory: string;
@@ -170,5 +172,48 @@ describe('JsonPaymentRepository', () => {
       UnsupportedStorageVersionError,
     );
     await expect(readFile(filePath, 'utf8')).resolves.toBe(unsupported);
+  });
+
+  it('recovers and processes abandoned work after repository restart', async () => {
+    const payment = buildPayment();
+    const firstRepository = new JsonPaymentRepository({ filePath });
+    await firstRepository.initialize();
+    await firstRepository.createPayment(payment, buildIdempotencyRecord());
+    await firstRepository.claimNextDuePayment(
+      new Date('2026-11-13T12:00:00.000Z'),
+    );
+
+    const restartedRepository = new JsonPaymentRepository({ filePath });
+    await restartedRepository.initialize();
+    await expect(
+      restartedRepository.recoverExpiredPayments(
+        new Date('2026-11-13T12:01:00.000Z'),
+        30_000,
+      ),
+    ).resolves.toBe(1);
+
+    const worker = new PaymentWorker(
+      restartedRepository,
+      new ScriptedPaymentGateway([{ kind: 'succeeded' }]),
+      { now: () => new Date('2026-11-13T12:01:00.000Z') },
+      {
+        attemptTimeoutMs: 1_000,
+        maxAttempts: 3,
+        pollIntervalMs: 250,
+        retryBaseDelayMs: 250,
+        shutdownTimeoutMs: 500,
+      },
+    );
+    await worker.processNextPayment();
+
+    const finalRepository = new JsonPaymentRepository({ filePath });
+    await finalRepository.initialize();
+    await expect(
+      finalRepository.findPaymentById(payment.id),
+    ).resolves.toMatchObject({
+      status: 'succeeded',
+      attemptCount: 2,
+      version: 5,
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryPaymentRepository } from '../../../../src/modules/payments/repositories/in-memory-payment.repository.js';
+import { PaymentStorageState } from '../../../../src/infrastructure/storage/payment-storage-state.js';
 import {
   InvalidPaymentVersionError,
   RepositoryNotInitializedError,
@@ -141,5 +142,58 @@ describe('InMemoryPaymentRepository', () => {
     await expect(
       repository.claimNextDuePayment(new Date('2026-11-13T13:00:00.000Z')),
     ).resolves.toBeUndefined();
+  });
+
+  it('requeues only processing payments whose lease has expired', async () => {
+    const expired = buildPayment({
+      id: '1351bb54-e5f2-42ee-8ef0-d2cc31b61cf8',
+      status: 'processing',
+      attemptCount: 1,
+      processingStartedAt: '2026-11-13T11:59:00.000Z',
+      updatedAt: '2026-11-13T11:59:00.000Z',
+      version: 2,
+    });
+    const active = buildPayment({
+      id: '4d04ff93-77fd-487f-81a9-39b80f6bf9fc',
+      status: 'processing',
+      attemptCount: 1,
+      processingStartedAt: '2026-11-13T11:59:45.001Z',
+      updatedAt: '2026-11-13T11:59:45.001Z',
+      version: 2,
+    });
+    const pending = buildPayment({
+      id: '8cae7d58-8a6e-4297-bdd4-3c6140bcc98c',
+    });
+    const emptyDocument = new PaymentStorageState().toDocument();
+    const repository = new InMemoryPaymentRepository({
+      ...emptyDocument,
+      payments: {
+        [expired.id]: expired,
+        [active.id]: active,
+        [pending.id]: pending,
+      },
+    });
+    await repository.initialize();
+
+    await expect(
+      repository.recoverExpiredPayments(
+        new Date('2026-11-13T12:00:00.000Z'),
+        30_000,
+      ),
+    ).resolves.toBe(1);
+    await expect(repository.findPaymentById(expired.id)).resolves.toEqual({
+      ...expired,
+      status: 'pending',
+      nextAttemptAt: '2026-11-13T12:00:00.000Z',
+      processingStartedAt: undefined,
+      updatedAt: '2026-11-13T12:00:00.000Z',
+      version: 3,
+    });
+    await expect(repository.findPaymentById(active.id)).resolves.toEqual(
+      active,
+    );
+    await expect(repository.findPaymentById(pending.id)).resolves.toEqual(
+      pending,
+    );
   });
 });
