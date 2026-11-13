@@ -1,0 +1,17 @@
+export const LOG_REDACTION_PATHS = [
+  'apiKey',
+  'authorization',
+  'idempotencyKey',
+  'body',
+  'headers',
+  '*.apiKey',
+  '*.authorization',
+  '*.idempotencyKey',
+  '*.body',
+  '*.headers',
+  'req.headers',
+  'req.body',
+  'request.headers',
+  'request.body',
+  'res.headers',
+] as const;
