@@ -1,0 +1,17 @@
+export const CONFIG_DEFAULTS = {
+  apiKey: undefined,
+  dataFilePath: './data/payments.json',
+  environment: 'development',
+  logLevel: 'info',
+  mutationRateLimitMax: 20,
+  mutationRateLimitWindowMs: 60_000,
+  port: 3_000,
+  rateLimitMax: 100,
+  rateLimitWindowMs: 900_000,
+  simulatedGatewayLatencyMs: 500,
+  trustedProxyHops: 0,
+  workerAttemptTimeoutMs: 5_000,
+  workerLeaseMs: 30_000,
+  workerMaxAttempts: 3,
+  workerPollIntervalMs: 250,
+} as const;

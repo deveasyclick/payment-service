@@ -48,12 +48,19 @@ payment-service/
 ├── src/
 │   ├── app.ts
 │   ├── server.ts
-│   ├── config.ts
+│   ├── config/
+│   │   ├── config.const.ts
+│   │   ├── config.schema.ts
+│   │   ├── index.ts
+│   │   └── load-config.ts
 │   ├── modules/
 │   │   └── payments/
+│   │       ├── payment.const.ts
+│   │       ├── payment.errors.ts
 │   │       ├── payment.types.ts
 │   │       ├── payment.schemas.ts
 │   │       ├── payment.state-machine.ts
+│   │       ├── payment.mapper.ts
 │   │       ├── payment.service.ts
 │   │       ├── payment.repository.ts
 │   │       ├── payment.gateway.ts
@@ -75,12 +82,15 @@ payment-service/
 │   │   └── validate.ts
 │   └── shared/
 │       ├── errors/
-│       │   └── application-error.ts
+│       │   ├── application-error.ts
+│       │   └── configuration.errors.ts
 │       ├── helpers/
 │       │   ├── clock.ts
 │       │   └── id-generator.ts
 │       └── types/
-│           └── shared.types.ts
+│           ├── clock.types.ts
+│           ├── config.types.ts
+│           └── id-generator.types.ts
 ├── tests/
 │   ├── unit/
 │   │   └── modules/
