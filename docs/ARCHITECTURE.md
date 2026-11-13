@@ -62,16 +62,18 @@ payment-service/
 │   │       ├── payment.state-machine.ts
 │   │       ├── payment.mapper.ts
 │   │       ├── payment.service.ts
+│   │       ├── payment-repository.errors.ts
 │   │       ├── payment-repository.types.ts
+│   │       ├── repositories/
+│   │       │   ├── in-memory-payment.repository.ts
+│   │       │   └── json-payment.repository.ts
 │   │       ├── payment.gateway.ts
 │   │       ├── payment.worker.ts
 │   │       └── payment.routes.ts
 │   ├── infrastructure/
-│   │   ├── persistence/
+│   │   ├── storage/
 │   │   │   ├── atomic-file-writer.ts
-│   │   │   ├── in-memory-payment.repository.ts
-│   │   │   ├── json-payment.repository.ts
-│   │   │   ├── payment-repository-state.ts
+│   │   │   ├── payment-storage-state.ts
 │   │   │   ├── storage.const.ts
 │   │   │   ├── storage.errors.ts
 │   │   │   ├── storage.schemas.ts
@@ -100,10 +102,9 @@ payment-service/
 │           └── id-generator.types.ts
 ├── tests/
 │   ├── unit/
-│   │   ├── infrastructure/
-│   │   │   └── in-memory-payment-repository.test.ts
 │   │   ├── modules/
 │   │   │   └── payments/
+│   │   │       ├── in-memory-payment-repository.test.ts
 │   │   │       ├── payment-mapper.test.ts
 │   │   │       ├── payment-state-machine.test.ts
 │   │   │       └── payment-service.test.ts
@@ -134,8 +135,9 @@ payment-service/
 Responsibilities and dependency rules:
 
 - `app.ts` creates the Express application without opening a port; `server.ts` wires concrete dependencies and owns the process lifecycle.
-- `modules/payments` owns payment-specific types, schemas, state rules, use cases, ports, worker orchestration, and routes.
-- `infrastructure` contains concrete adapters for filesystem persistence, the simulated gateway, and Pino. Domain rules do not import these implementations.
+- `modules/payments` owns payment-specific types, state rules, use cases, repository contracts and implementations, worker orchestration, and routes.
+- `infrastructure/storage` owns file-database mechanics, serialization schemas, the versioned storage document, and atomic file replacement. This mirrors the boundary between database infrastructure and feature repositories in a database-backed service.
+- Other `infrastructure` folders contain cross-module technical adapters such as the simulated gateway and Pino. Domain rules do not import these implementations.
 - `middleware` contains cross-cutting Express behavior rather than payment business logic.
 - `shared` contains only reusable cross-module concerns. Every file is grouped by purpose: errors, helpers, or types. Payment-specific types remain inside the payment module.
 - Tests are separated by scope. Unit tests mirror the payment module; integration tests cover API, persistence, and worker boundaries; test doubles stay under `tests/helpers`.
@@ -147,7 +149,7 @@ The intended dependency direction is:
 routes -> payment service -> repository/gateway interfaces
                                   ^
                                   |
-                    infrastructure implementations
+       module repositories / infrastructure adapters
 ```
 
 **Why:** a module-first layout keeps the only business capability cohesive while leaving room for future modules. Interfaces stay near the payment use cases that consume them, concrete adapters remain replaceable, and the structure avoids unnecessary controller/DTO/mapper layers for three endpoints.
