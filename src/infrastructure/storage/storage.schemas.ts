@@ -16,6 +16,7 @@ const timestampSchema = z.iso.datetime({ offset: true });
 const paymentSchema = z.strictObject({
   id: z.uuid(),
   amount: z.number().int().positive().max(999_999_999_999),
+  // ISO 4217-style code: exactly three uppercase ASCII letters.
   currency: z.string().regex(/^[A-Z]{3}$/u),
   reference: z.string().min(1).max(100).optional(),
   status: z.enum(PAYMENT_STATUSES),
@@ -30,6 +31,7 @@ const paymentSchema = z.strictObject({
 
 const idempotencyRecordSchema = z.strictObject({
   key: z.string().min(1).max(128),
+  // SHA-256 encoded as exactly 64 lowercase hexadecimal characters.
   requestHash: z.string().regex(/^[a-f0-9]{64}$/u),
   paymentId: z.uuid(),
   createdAt: timestampSchema,

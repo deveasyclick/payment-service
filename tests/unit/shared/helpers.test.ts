@@ -14,6 +14,7 @@ describe('shared helpers', () => {
   });
 
   it('generates UUID identifiers', () => {
+    // RFC 4122 UUID v4: version nibble 4 and variant nibble 8, 9, a, or b.
     expect(new UuidGenerator().generate()).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
     );

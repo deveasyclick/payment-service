@@ -57,11 +57,13 @@ payment-service/
 │   │   └── payments/
 │   │       ├── payment.const.ts
 │   │       ├── payment.errors.ts
+│   │       ├── payment-idempotency.ts
 │   │       ├── payment.types.ts
 │   │       ├── payment.schemas.ts
 │   │       ├── payment.state-machine.ts
 │   │       ├── payment.mapper.ts
 │   │       ├── payment.service.ts
+│   │       ├── payment-service.types.ts
 │   │       ├── payment-repository.errors.ts
 │   │       ├── payment-repository.types.ts
 │   │       ├── repositories/
@@ -105,6 +107,7 @@ payment-service/
 │   │   ├── modules/
 │   │   │   └── payments/
 │   │   │       ├── in-memory-payment-repository.test.ts
+│   │   │       ├── payment-idempotency.test.ts
 │   │   │       ├── payment-mapper.test.ts
 │   │   │       ├── payment-state-machine.test.ts
 │   │   │       └── payment-service.test.ts

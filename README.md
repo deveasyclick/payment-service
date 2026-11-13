@@ -2,7 +2,7 @@
 
 A small, production-minded payment-processing microservice designed for a Node.js + React Developer assessment. It exposes an Express REST API for creating payments, retrieving them, and updating their status while processing new payments asynchronously.
 
-> **Project status:** architecture, delivery planning, tooling, configuration validation, payment-domain rules, and atomic JSON persistence are complete. Background processing and HTTP runtime behavior have not been implemented yet.
+> **Project status:** architecture, tooling, configuration validation, payment-domain rules, atomic JSON persistence, and payment application use cases are complete. Background processing and HTTP runtime behavior have not been implemented yet.
 
 ## What this project demonstrates
 
@@ -72,11 +72,13 @@ payment-service/
 │   │   └── payments/
 │   │       ├── payment.const.ts
 │   │       ├── payment.errors.ts
+│   │       ├── payment-idempotency.ts
 │   │       ├── payment.types.ts
 │   │       ├── payment.schemas.ts
 │   │       ├── payment.state-machine.ts
 │   │       ├── payment.mapper.ts
 │   │       ├── payment.service.ts
+│   │       ├── payment-service.types.ts
 │   │       ├── payment-repository.errors.ts
 │   │       ├── payment-repository.types.ts
 │   │       ├── repositories/
@@ -120,6 +122,7 @@ payment-service/
 │   │   ├── modules/
 │   │   │   └── payments/
 │   │   │       ├── in-memory-payment-repository.test.ts
+│   │   │       ├── payment-idempotency.test.ts
 │   │   │       ├── payment-mapper.test.ts
 │   │   │       ├── payment-state-machine.test.ts
 │   │   │       └── payment-service.test.ts
